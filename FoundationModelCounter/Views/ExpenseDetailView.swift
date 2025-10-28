@@ -12,6 +12,15 @@ struct ExpenseDetailView: View {
     let expense: Expense
     @State private var showEditExpense = false
     
+    // 格式化日期为中文
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter.string(from: expense.date)
+    }
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -33,7 +42,7 @@ struct ExpenseDetailView: View {
                 // 详细信息
                 GroupBox {
                     VStack(spacing: 15) {
-                        InfoRow(label: "日期", value: expense.date.formatted(date: .long, time: .shortened))
+                        InfoRow(label: "日期", value: formattedDate)
                         Divider()
                         InfoRow(label: "大类", value: expense.mainCategory)
                         Divider()

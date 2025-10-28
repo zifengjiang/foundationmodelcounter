@@ -30,10 +30,35 @@ struct ContentView: View {
     }
     
     var groupedExpenses: [(String, [Expense])] {
-        let grouped = Dictionary(grouping: filteredExpenses) { expense in
-            expense.date.formatted(date: .abbreviated, time: .omitted)
+        // 按日期分组，使用中文格式
+        let grouped = Dictionary(grouping: filteredExpenses) { expense -> String in
+            // 创建中文日期格式化器
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            
+            // 判断是否为今天、昨天、前天
+            let calendar = Calendar.current
+            if calendar.isDateInToday(expense.date) {
+                return "今天"
+            } else if calendar.isDateInYesterday(expense.date) {
+                return "昨天"
+            } else if let daysAgo = calendar.dateComponents([.day], from: expense.date, to: Date()).day,
+                      daysAgo == 2 {
+                return "前天"
+            }
+            
+            return formatter.string(from: expense.date)
         }
-        return grouped.sorted { $0.key > $1.key }
+        
+        // 按日期倒序排序（最新的在前）
+        return grouped.sorted { pair1, pair2 in
+            // 获取每组中最新的日期进行比较
+            let date1 = pair1.value.map { $0.date }.max() ?? Date.distantPast
+            let date2 = pair2.value.map { $0.date }.max() ?? Date.distantPast
+            return date1 > date2
+        }
     }
     
     var availableMainCategories: [String] {
@@ -196,6 +221,8 @@ struct ExpenseRow: View {
                     Text(expense.mainCategory)
                     Text("·")
                     Text(expense.subCategory)
+                    Text("·")
+                    Text(formatTime(expense.date))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -234,6 +261,14 @@ struct ExpenseRow: View {
             for: expense.mainCategory,
             subCategory: expense.subCategory
         )
+    }
+    
+    // 格式化时间显示
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }
 
