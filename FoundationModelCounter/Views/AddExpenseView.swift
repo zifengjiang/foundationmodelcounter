@@ -31,8 +31,11 @@ struct AddExpenseView: View {
     let currencies = ["CNY", "USD", "EUR", "JPY", "GBP", "HKD"]
     let categories = ExpenseCategory.allCases
     
+    @State private var availableMainCategories: [String] = []
+    @State private var availableSubCategories: [String] = []
+    
     var selectedCategorySubcategories: [String] {
-        ExpenseCategory(rawValue: mainCategory)?.subCategories ?? ["其他"]
+        availableSubCategories.isEmpty ? ["其他"] : availableSubCategories
     }
     
     var body: some View {
@@ -86,20 +89,19 @@ struct AddExpenseView: View {
                         .frame(width: 80)
                     }
                     
-                    Picker("大类", selection: $mainCategory) {
-                        ForEach(categories, id: \.rawValue) { category in
-                            Text(category.rawValue).tag(category.rawValue)
-                        }
-                    }
-                    .onChange(of: mainCategory) { oldValue, newValue in
-                        // 当大类改变时，重置小类为该大类的第一个选项
-                        subCategory = selectedCategorySubcategories.first ?? "其他"
+                    HStack {
+                        Text("大类")
+                        TextField("输入或选择", text: $mainCategory)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: mainCategory) { oldValue, newValue in
+                                updateSubCategories()
+                            }
                     }
                     
-                    Picker("小类", selection: $subCategory) {
-                        ForEach(selectedCategorySubcategories, id: \.self) { sub in
-                            Text(sub).tag(sub)
-                        }
+                    HStack {
+                        Text("小类")
+                        TextField("输入或选择", text: $subCategory)
+                            .multilineTextAlignment(.trailing)
                     }
                     
                     TextField("商户", text: $merchant)
@@ -161,6 +163,36 @@ struct AddExpenseView: View {
                     }
                 }
             }
+            .onAppear {
+                loadCategories()
+            }
+        }
+    }
+    
+    private func loadCategories() {
+        // 初始化默认类目（如果需要）
+        CategoryService.shared.initializeDefaultCategories(context: modelContext)
+        
+        // 加载可用的大类
+        availableMainCategories = CategoryService.shared.getMainCategories(context: modelContext)
+        
+        // 如果主类目为空或为默认值，设置为第一个可用类目
+        if mainCategory == "其他" || mainCategory.isEmpty {
+            mainCategory = availableMainCategories.first ?? "其他"
+        }
+        
+        updateSubCategories()
+    }
+    
+    private func updateSubCategories() {
+        availableSubCategories = CategoryService.shared.getSubCategories(
+            for: mainCategory,
+            context: modelContext
+        )
+        
+        // 如果小类不在可用列表中，重置为第一个
+        if !availableSubCategories.contains(subCategory) {
+            subCategory = availableSubCategories.first ?? "其他"
         }
     }
     
@@ -183,13 +215,12 @@ struct AddExpenseView: View {
             recognizedText = try await OCRService.shared.recognizeText(from: image)
             
             // 步骤 2: AI 分析账单信息
-            let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(from: recognizedText)
+            let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(from: recognizedText, context: modelContext)
             
             // 步骤 3: 填充表单
             await MainActor.run {
-                if let dateString = expenseInfo.date,
-                   let parsedDate = ISO8601DateFormatter().date(from: dateString) {
-                    date = parsedDate
+                if let dateString = expenseInfo.date {
+                    date = parseDate(from: dateString) ?? Date()
                 }
                 
                 if let amt = expenseInfo.amount {
@@ -202,6 +233,7 @@ struct AddExpenseView: View {
                 
                 if let main = expenseInfo.mainCategory {
                     mainCategory = main
+                    updateSubCategories()
                 }
                 
                 if let sub = expenseInfo.subCategory {
@@ -232,6 +264,15 @@ struct AddExpenseView: View {
             return
         }
         
+        // 更新或添加类目
+        if !mainCategory.isEmpty && !subCategory.isEmpty {
+            _ = CategoryService.shared.addOrUpdateCategory(
+                mainCategory: mainCategory,
+                subCategory: subCategory,
+                context: modelContext
+            )
+        }
+        
         let expense = Expense(
             date: date,
             amount: amountValue,
@@ -245,7 +286,49 @@ struct AddExpenseView: View {
         )
         
         modelContext.insert(expense)
+        
+        // 保存数据库
+        try? modelContext.save()
+        
         dismiss()
+    }
+    
+    // 解析日期字符串（支持多种格式）
+    private func parseDate(from dateString: String) -> Date? {
+        let trimmed = dateString.trimmingCharacters(in: .whitespaces)
+        
+        // 尝试格式1: YYYY-MM-DD HH:mm:ss
+        let formatter1 = DateFormatter()
+        formatter1.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter1.locale = Locale(identifier: "en_US_POSIX")
+        formatter1.timeZone = TimeZone.current  // 使用本地时区
+        if let date = formatter1.date(from: trimmed) {
+            return date
+        }
+        
+        // 尝试格式2: YYYY-MM-DD
+        let formatter2 = DateFormatter()
+        formatter2.dateFormat = "yyyy-MM-dd"
+        formatter2.locale = Locale(identifier: "en_US_POSIX")
+        formatter2.timeZone = TimeZone.current
+        if let date = formatter2.date(from: trimmed) {
+            return date
+        }
+        
+        // 尝试格式3: ISO8601 (如果 AI 还是返回了这种格式)
+        let iso8601Formatter = ISO8601DateFormatter()
+        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso8601Formatter.date(from: trimmed) {
+            return date
+        }
+        
+        // 尝试不带分数秒的 ISO8601
+        iso8601Formatter.formatOptions = [.withInternetDateTime]
+        if let date = iso8601Formatter.date(from: trimmed) {
+            return date
+        }
+        
+        return nil
     }
 }
 

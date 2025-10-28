@@ -6,23 +6,15 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ExpenseDetailView: View {
     let expense: Expense
+    @State private var showEditExpense = false
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // 账单图片
-                if let imageData = expense.imageData,
-                   let image = UIImage(data: imageData) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .shadow(radius: 5)
-                }
-                
                 // 金额
                 HStack {
                     Spacer()
@@ -37,7 +29,7 @@ struct ExpenseDetailView: View {
                     Spacer()
                 }
                 .padding(.vertical)
-                
+
                 // 详细信息
                 GroupBox {
                     VStack(spacing: 15) {
@@ -46,12 +38,12 @@ struct ExpenseDetailView: View {
                         InfoRow(label: "大类", value: expense.mainCategory)
                         Divider()
                         InfoRow(label: "小类", value: expense.subCategory)
-                        
+
                         if !expense.merchant.isEmpty {
                             Divider()
                             InfoRow(label: "商户", value: expense.merchant)
                         }
-                        
+
                         if !expense.note.isEmpty {
                             Divider()
                             InfoRow(label: "备注", value: expense.note)
@@ -59,6 +51,20 @@ struct ExpenseDetailView: View {
                     }
                     .padding(.vertical, 5)
                 }
+
+                // 账单图片
+                if let imageData = expense.imageData,
+                   let image = UIImage(data: imageData) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .shadow(radius: 5)
+                }
+                
+
+                
+
                 
                 // 原始文本
                 if !expense.originalText.isEmpty {
@@ -79,6 +85,16 @@ struct ExpenseDetailView: View {
         }
         .navigationTitle("账目详情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("编辑") {
+                    showEditExpense = true
+                }
+            }
+        }
+        .sheet(isPresented: $showEditExpense) {
+            EditExpenseView(expense: expense)
+        }
     }
 }
 

@@ -11,9 +11,12 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    @Query(sort: [SortDescriptor(\Category.usageCount, order: .reverse)]) private var categories: [Category]
     
     @State private var showAddExpense = false
     @State private var selectedCategory: String?
+    @State private var showSettings = false
+    @State private var showCategoryManager = false
     
     var filteredExpenses: [Expense] {
         if let category = selectedCategory {
@@ -31,6 +34,11 @@ struct ContentView: View {
             expense.date.formatted(date: .abbreviated, time: .omitted)
         }
         return grouped.sorted { $0.key > $1.key }
+    }
+    
+    var availableMainCategories: [String] {
+        let mainCats = Set(categories.map { $0.mainCategory })
+        return Array(mainCats).sorted()
     }
 
     var body: some View {
@@ -61,16 +69,16 @@ struct ContentView: View {
                     // 分类筛选
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(ExpenseCategory.allCases, id: \.rawValue) { category in
+                            ForEach(availableMainCategories, id: \.self) { category in
                                 CategoryChip(
-                                    category: category.rawValue,
-                                    isSelected: selectedCategory == category.rawValue
+                                    category: category,
+                                    isSelected: selectedCategory == category
                                 ) {
                                     withAnimation {
-                                        if selectedCategory == category.rawValue {
+                                        if selectedCategory == category {
                                             selectedCategory = nil
                                         } else {
-                                            selectedCategory = category.rawValue
+                                            selectedCategory = category
                                         }
                                     }
                                 }
@@ -118,6 +126,20 @@ struct ContentView: View {
             }
             .navigationTitle("记账本")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Button(action: { showSettings = true }) {
+                            Label("AI 设置", systemImage: "gearshape")
+                        }
+                        
+                        Button(action: { showCategoryManager = true }) {
+                            Label("类目管理", systemImage: "folder")
+                        }
+                    } label: {
+                        Label("菜单", systemImage: "line.3.horizontal")
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showAddExpense = true }) {
                         Label("添加账目", systemImage: "plus.circle.fill")
@@ -126,6 +148,16 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showAddExpense) {
                 AddExpenseView()
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showCategoryManager) {
+                CategoryManagerView()
+            }
+            .onAppear {
+                // 初始化默认类目
+                CategoryService.shared.initializeDefaultCategories(context: modelContext)
             }
         }
     }
@@ -187,26 +219,28 @@ struct ExpenseRow: View {
     
     var categoryColor: Color {
         switch expense.mainCategory {
+        case "服饰": return .pink
         case "餐饮": return .orange
         case "交通": return .blue
-        case "购物": return .pink
-        case "娱乐": return .purple
-        case "住房": return .green
+        case "居家": return .green
+        case "数码": return .purple
         case "医疗": return .red
-        case "教育": return .indigo
+        case "娱乐": return .cyan
+        case "学习": return .indigo
         default: return .gray
         }
     }
     
     var categoryIcon: String {
         switch expense.mainCategory {
+        case "服饰": return "tshirt.fill"
         case "餐饮": return "fork.knife"
         case "交通": return "car.fill"
-        case "购物": return "cart.fill"
-        case "娱乐": return "gamecontroller.fill"
-        case "住房": return "house.fill"
+        case "居家": return "house.fill"
+        case "数码": return "laptopcomputer"
         case "医疗": return "cross.case.fill"
-        case "教育": return "book.fill"
+        case "娱乐": return "gamecontroller.fill"
+        case "学习": return "book.fill"
         default: return "ellipsis.circle.fill"
         }
     }

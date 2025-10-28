@@ -13,6 +13,7 @@ struct FoundationModelCounterApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Expense.self,
+            Category.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
