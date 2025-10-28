@@ -14,6 +14,7 @@ struct EditExpenseView: View {
     
     let expense: Expense
     
+    @State private var transactionType: TransactionType
     @State private var date: Date
     @State private var amount: String
     @State private var currency: String
@@ -30,6 +31,7 @@ struct EditExpenseView: View {
     
     init(expense: Expense) {
         self.expense = expense
+        _transactionType = State(initialValue: TransactionType(rawValue: expense.transactionType) ?? .expense)
         _date = State(initialValue: expense.date)
         _amount = State(initialValue: String(format: "%.2f", expense.amount))
         _currency = State(initialValue: expense.currency)
@@ -44,6 +46,14 @@ struct EditExpenseView: View {
             Form {
                 // 账目信息
                 Section {
+                    // 交易类型（只读）
+                    HStack {
+                        Text("类型")
+                        Spacer()
+                        Text(transactionType.rawValue)
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     DatePicker("日期", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     
                     HStack {
@@ -76,12 +86,12 @@ struct EditExpenseView: View {
                             .multilineTextAlignment(.trailing)
                     }
                     
-                    TextField("商户/用途", text: $merchant)
+                    TextField(transactionType == .expense ? "商户/商品" : "收入来源", text: $merchant)
                     
                     TextField("备注", text: $note, axis: .vertical)
                         .lineLimit(3...6)
                 } header: {
-                    Text("账目信息")
+                    Text("\(transactionType.rawValue)信息")
                 }
                 
                 // 原始信息
@@ -109,7 +119,7 @@ struct EditExpenseView: View {
                     }
                 }
             }
-            .navigationTitle("编辑账目")
+            .navigationTitle("编辑\(transactionType.rawValue)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -133,14 +143,18 @@ struct EditExpenseView: View {
     
     private func loadCategories() {
         CategoryService.shared.initializeDefaultCategories(context: modelContext)
-        availableMainCategories = CategoryService.shared.getMainCategories(context: modelContext)
+        availableMainCategories = CategoryService.shared.getMainCategories(
+            context: modelContext,
+            transactionType: transactionType
+        )
         updateSubCategories()
     }
     
     private func updateSubCategories() {
         availableSubCategories = CategoryService.shared.getSubCategories(
             for: mainCategory,
-            context: modelContext
+            context: modelContext,
+            transactionType: transactionType
         )
     }
     
@@ -153,6 +167,7 @@ struct EditExpenseView: View {
         // 更新或添加类目
         if !mainCategory.isEmpty && !subCategory.isEmpty {
             _ = CategoryService.shared.addOrUpdateCategory(
+                transactionType: transactionType,
                 mainCategory: mainCategory,
                 subCategory: subCategory,
                 context: modelContext
@@ -160,6 +175,7 @@ struct EditExpenseView: View {
         }
         
         // 更新账目信息
+        expense.transactionType = transactionType.rawValue
         expense.date = date
         expense.amount = amountValue
         expense.currency = currency

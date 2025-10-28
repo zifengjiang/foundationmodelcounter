@@ -14,19 +14,35 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\Category.usageCount, order: .reverse)]) private var categories: [Category]
     
     @State private var showAddExpense = false
+    @State private var selectedTransactionType: TransactionType = .expense
     @State private var selectedCategory: String?
     @State private var showSettings = false
     @State private var showCategoryManager = false
     
     var filteredExpenses: [Expense] {
+        var result = expenses.filter { $0.transactionType == selectedTransactionType.rawValue }
         if let category = selectedCategory {
-            return expenses.filter { $0.mainCategory == category }
+            result = result.filter { $0.mainCategory == category }
         }
-        return expenses
+        return result
     }
     
     var totalAmount: Double {
         filteredExpenses.reduce(0) { $0 + $1.amount }
+    }
+    
+    var totalIncome: Double {
+        expenses.filter { $0.transactionType == TransactionType.income.rawValue }
+            .reduce(0) { $0 + $1.amount }
+    }
+    
+    var totalExpense: Double {
+        expenses.filter { $0.transactionType == TransactionType.expense.rawValue }
+            .reduce(0) { $0 + $1.amount }
+    }
+    
+    var balance: Double {
+        totalIncome - totalExpense
     }
     
     var groupedExpenses: [(String, [Expense])] {
@@ -62,7 +78,9 @@ struct ContentView: View {
     }
     
     var availableMainCategories: [String] {
-        let mainCats = Set(categories.map { $0.mainCategory })
+        let mainCats = Set(categories
+            .filter { $0.transactionType == selectedTransactionType.rawValue }
+            .map { $0.mainCategory })
         return Array(mainCats).sorted()
     }
 
@@ -71,24 +89,71 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 // 统计卡片
                 VStack(spacing: 12) {
-                    HStack {
-                        Text("总支出")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
+                    // 总览统计（收入、支出、余额）
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("收入")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "%.2f", totalIncome))
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.green)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("支出")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "%.2f", totalExpense))
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.red)
+                        }
+                        
                         Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("余额")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "%.2f", balance))
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .foregroundStyle(balance >= 0 ? .green : .red)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                    
+                    Divider()
+                    
+                    // 交易类型切换
+                    HStack {
+                        Picker("交易类型", selection: $selectedTransactionType) {
+                            Text("支出").tag(TransactionType.expense)
+                            Text("收入").tag(TransactionType.income)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: selectedTransactionType) { oldValue, newValue in
+                            selectedCategory = nil // 切换类型时清除分类筛选
+                        }
+                        
                         if let category = selectedCategory {
                             Button(action: { selectedCategory = nil }) {
-                                Label("显示全部", systemImage: "xmark.circle.fill")
-                                    .font(.caption)
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
+                    .padding(.vertical, 8)
                     
+                    // 当前类型的金额
                     HStack(alignment: .firstTextBaseline) {
                         Text("¥")
                             .font(.title2)
                         Text(String(format: "%.2f", totalAmount))
                             .font(.system(size: 36, weight: .bold, design: .rounded))
+                        Spacer()
+                        Text(selectedTransactionType.rawValue)
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
                     }
                     
                     // 分类筛选
@@ -97,7 +162,8 @@ struct ContentView: View {
                             ForEach(availableMainCategories, id: \.self) { category in
                                 CategoryChip(
                                     category: category,
-                                    isSelected: selectedCategory == category
+                                    isSelected: selectedCategory == category,
+                                    transactionType: selectedTransactionType
                                 ) {
                                     withAnimation {
                                         if selectedCategory == category {
@@ -120,13 +186,13 @@ struct ContentView: View {
                 if filteredExpenses.isEmpty {
                     VStack(spacing: 20) {
                         Spacer()
-                        Image(systemName: "doc.text.magnifyingglass")
+                        Image(systemName: selectedTransactionType == .expense ? "cart" : "banknote")
                             .font(.system(size: 60))
                             .foregroundStyle(.secondary)
-                        Text("暂无账目记录")
+                        Text("暂无\(selectedTransactionType.rawValue)记录")
                             .font(.title3)
                             .foregroundStyle(.secondary)
-                        Text("点击右上角 + 按钮添加第一条账目")
+                        Text("点击右上角 + 按钮添加第一条记录")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                         Spacer()
@@ -167,12 +233,12 @@ struct ContentView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showAddExpense = true }) {
-                        Label("添加账目", systemImage: "plus.circle.fill")
+                        Label("添加记录", systemImage: "plus.circle.fill")
                     }
                 }
             }
             .sheet(isPresented: $showAddExpense) {
-                AddExpenseView()
+                AddExpenseView(defaultTransactionType: selectedTransactionType)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -198,6 +264,10 @@ struct ContentView: View {
 
 struct ExpenseRow: View {
     let expense: Expense
+    
+    var transactionType: TransactionType {
+        TransactionType(rawValue: expense.transactionType) ?? .expense
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -232,9 +302,14 @@ struct ExpenseRow: View {
             
             // 金额
             VStack(alignment: .trailing, spacing: 4) {
-                Text(String(format: "%.2f", expense.amount))
-                    .font(.system(.body, design: .rounded))
-                    .fontWeight(.semibold)
+                HStack(spacing: 2) {
+                    Text(transactionType == .income ? "+" : "-")
+                        .foregroundStyle(transactionType == .income ? .green : .red)
+                    Text(String(format: "%.2f", expense.amount))
+                        .foregroundStyle(transactionType == .income ? .green : .primary)
+                }
+                .font(.system(.body, design: .rounded))
+                .fontWeight(.semibold)
                 
                 Text(expense.currency)
                     .font(.caption2)
@@ -245,12 +320,13 @@ struct ExpenseRow: View {
     }
     
     var categoryColor: Color {
-        let colorName = CategoryService.getMainCategoryColor(for: expense.mainCategory)
+        let colorName = CategoryService.getMainCategoryColor(for: expense.mainCategory, transactionType: transactionType)
         switch colorName {
         case "pink": return .pink
         case "orange": return .orange
         case "green": return .green
         case "blue": return .blue
+        case "purple": return .purple
         default: return .gray
         }
     }
@@ -259,7 +335,8 @@ struct ExpenseRow: View {
         // 优先使用小类图标，提供更精确的视觉反馈
         return CategoryService.getSubCategoryIcon(
             for: expense.mainCategory,
-            subCategory: expense.subCategory
+            subCategory: expense.subCategory,
+            transactionType: transactionType
         )
     }
     
@@ -275,18 +352,38 @@ struct ExpenseRow: View {
 struct CategoryChip: View {
     let category: String
     let isSelected: Bool
+    let transactionType: TransactionType
     let action: () -> Void
+    
+    var chipColor: Color {
+        if isSelected {
+            return Color.accentColor
+        }
+        let colorName = CategoryService.getMainCategoryColor(for: category, transactionType: transactionType)
+        switch colorName {
+        case "pink": return .pink.opacity(0.2)
+        case "orange": return .orange.opacity(0.2)
+        case "green": return .green.opacity(0.2)
+        case "blue": return .blue.opacity(0.2)
+        case "purple": return .purple.opacity(0.2)
+        default: return Color(.systemGray5)
+        }
+    }
     
     var body: some View {
         Button(action: action) {
-            Text(category)
-                .font(.subheadline)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(isSelected ? Color.accentColor : Color(.systemGray5))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .clipShape(Capsule())
+            HStack(spacing: 4) {
+                Image(systemName: CategoryService.getMainCategoryIcon(for: category, transactionType: transactionType))
+                    .font(.caption)
+                Text(category)
+                    .font(.subheadline)
+            }
+            .fontWeight(isSelected ? .semibold : .regular)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(chipColor)
+            .foregroundStyle(isSelected ? .white : .primary)
+            .clipShape(Capsule())
         }
     }
 }

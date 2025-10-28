@@ -11,6 +11,7 @@ import SwiftData
 @Model
 final class Expense {
     var id: UUID
+    var transactionType: String  // 交易类型：支出/收入
     var date: Date
     var amount: Double
     var currency: String
@@ -23,6 +24,7 @@ final class Expense {
     
     init(
         id: UUID = UUID(),
+        transactionType: String = TransactionType.expense.rawValue,
         date: Date = Date(),
         amount: Double,
         currency: String = "CNY",
@@ -34,6 +36,7 @@ final class Expense {
         imageData: Data? = nil
     ) {
         self.id = id
+        self.transactionType = transactionType
         self.date = date
         self.amount = amount
         self.currency = currency

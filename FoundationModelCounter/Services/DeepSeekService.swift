@@ -119,15 +119,19 @@ class DeepSeekService {
         return firstChoice.message.content
     }
     
-    func analyzeExpense(from text: String, existingCategories: String, apiKey: String) async throws -> String {
+    func analyzeExpense(from text: String, expenseCategories: String, incomeCategories: String, preferredType: TransactionType? = nil, apiKey: String) async throws -> String {
         let systemMessage = """
-        你是一个专业的账单分析助手。请从账单文本中提取财务信息。
+        你是一个专业的财务分析助手。请从账单或收入凭证文本中提取财务信息。
 
-        ## 分类体系（衣食住行）
+        ## 交易类型判断
 
-        \(existingCategories)
+        首先判断这是**支出**还是**收入**：
+        - 支出：购买商品、服务消费、转账支付等花钱的行为
+        - 收入：工资到账、转账收款、退款、分红、利息等收钱的行为
 
-        ## 分类说明
+        ## 支出分类体系（衣食住行）
+
+        \(expenseCategories)
 
         **衣** - 外在与形象相关：
         - 日常穿着：衣服、鞋袜、内衣等
@@ -154,24 +158,54 @@ class DeepSeekService {
         - 旅行度假：机票、酒店、旅途中开销
         - 数码提升：手机、电脑、生产力设备
 
+        ## 收入分类体系
+
+        \(incomeCategories)
+
+        **职薪** - 工作相关收入：
+        - 工资薪金：基本工资、奖金、津贴
+        - 兼职收入：兼职、外包、咨询
+        - 绩效奖励：年终奖、项目奖金、提成
+        - 福利补贴：餐补、交通补贴、通讯补贴
+
+        **理财** - 投资理财收益：
+        - 投资收益：股票、基金、债券收益
+        - 利息收入：存款利息、债券利息
+        - 分红收益：股票分红、基金分红
+        - 租金收入：房租、车位租赁
+
+        **经营** - 生意经营收入：
+        - 销售收入：商品销售、服务收入
+        - 佣金收入：中介佣金、代理费
+        - 版权收入：版税、专利授权
+        - 广告收入：自媒体、内容创作
+
+        **其他** - 其他收入来源：
+        - 礼金红包：节日红包、生日礼金
+        - 退款返现：商品退款、信用卡返现
+        - 中奖收入：彩票、抽奖、奖品
+        - 其他收入：未分类的其他收入
+
         ## 分类规则
 
-        1. 大类必须是：衣、食、住、行 之一
-        2. 小类优先从上述已有类目中选择
-        3. 根据消费的**实际用途**来分类，不要根据支付渠道（如"网购"）分类
-        4. 如果账单内容与某个小类高度相关，直接使用该小类
-        5. 商户字段填写具体的商品或服务描述
+        1. transactionType 必须是：支出 或 收入
+        2. 支出大类必须是：衣、食、住、行 之一
+        3. 收入大类必须是：职薪、理财、经营、其他 之一
+        4. 小类优先从上述已有类目中选择
+        5. 根据交易的**实际用途**来分类，不要根据支付渠道分类
+        6. 商户字段填写具体的商品/服务/收入来源描述
 
         ## 输出格式
 
         请以 JSON 格式返回（如果某字段无法提取则设为 null）：
         {
+            "transactionType": "支出 或 收入",
             "date": "YYYY-MM-DD HH:mm:ss（本地时间，不要UTC）",
-            "amount": 数字类型的金额,
+            "amount": 数字类型的金额（正数）,
             "currency": "币种代码（CNY/USD/EUR/JPY/GBP/HKD）",
-            "mainCategory": "衣/食/住/行",
+            "mainCategory": "根据类型选择对应的大类",
             "subCategory": "对应的小类",
-            "merchant": "商品/服务的简短描述",
+            "merchant": "商品/服务/收入来源的简短描述",
             "note": "备注信息"
         }
 
@@ -179,14 +213,15 @@ class DeepSeekService {
         - 只返回 JSON，不要有其他文字
         - 日期只有日期没时间时，使用 12:00:00
         - 币种默认为 CNY
-        - 忽略广告信息，只关注实际支付的产品
+        - 金额始终为正数
+        - 忽略广告信息，只关注实际的交易信息
         """
         
-        let userMessage = """
-        请分析以下账单文本并提取账目信息：
-        
-        \(text)
-        """
+        var userMessage = "请分析以下文本并提取财务信息"
+        if let type = preferredType {
+            userMessage += "（这是一条\(type.rawValue)记录）"
+        }
+        userMessage += "：\n\n\(text)"
         
         let response = try await chat(
             messages: [

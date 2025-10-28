@@ -13,6 +13,8 @@ struct AddExpenseView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     
+    var defaultTransactionType: TransactionType = .expense
+    
     @State private var selectedImage: UIImage?
     @State private var showImagePicker = false
     @State private var isProcessing = false
@@ -20,6 +22,7 @@ struct AddExpenseView: View {
     @State private var errorMessage: String?
     
     // 账目信息
+    @State private var transactionType: TransactionType = .expense
     @State private var date = Date()
     @State private var amount = ""
     @State private var currency = "CNY"
@@ -72,6 +75,16 @@ struct AddExpenseView: View {
                 
                 // 账目信息
                 Section {
+                    // 交易类型选择
+                    Picker("类型", selection: $transactionType) {
+                        Text("支出").tag(TransactionType.expense)
+                        Text("收入").tag(TransactionType.income)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: transactionType) { oldValue, newValue in
+                        loadCategories()
+                    }
+                    
                     DatePicker("日期", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     
                     HStack {
@@ -104,12 +117,12 @@ struct AddExpenseView: View {
                             .multilineTextAlignment(.trailing)
                     }
                     
-                    TextField("商户", text: $merchant)
+                    TextField(transactionType == .expense ? "商户/商品" : "收入来源", text: $merchant)
                     
                     TextField("备注", text: $note, axis: .vertical)
                         .lineLimit(3...6)
                 } header: {
-                    Text("账目信息")
+                    Text("\(transactionType.rawValue)信息")
                 }
                 
                 // 错误信息
@@ -121,7 +134,7 @@ struct AddExpenseView: View {
                     }
                 }
             }
-            .navigationTitle("添加账目")
+            .navigationTitle("添加\(transactionType.rawValue)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -164,6 +177,7 @@ struct AddExpenseView: View {
                 }
             }
             .onAppear {
+                transactionType = defaultTransactionType
                 loadCategories()
             }
         }
@@ -173,11 +187,14 @@ struct AddExpenseView: View {
         // 初始化默认类目（如果需要）
         CategoryService.shared.initializeDefaultCategories(context: modelContext)
         
-        // 加载可用的大类
-        availableMainCategories = CategoryService.shared.getMainCategories(context: modelContext)
+        // 根据交易类型加载可用的大类
+        availableMainCategories = CategoryService.shared.getMainCategories(
+            context: modelContext,
+            transactionType: transactionType
+        )
         
         // 如果主类目为空或为默认值，设置为第一个可用类目
-        if mainCategory == "其他" || mainCategory.isEmpty {
+        if mainCategory == "其他" || mainCategory.isEmpty || !availableMainCategories.contains(mainCategory) {
             mainCategory = availableMainCategories.first ?? "其他"
         }
         
@@ -187,7 +204,8 @@ struct AddExpenseView: View {
     private func updateSubCategories() {
         availableSubCategories = CategoryService.shared.getSubCategories(
             for: mainCategory,
-            context: modelContext
+            context: modelContext,
+            transactionType: transactionType
         )
         
         // 如果小类不在可用列表中，重置为第一个
@@ -215,10 +233,21 @@ struct AddExpenseView: View {
             recognizedText = try await OCRService.shared.recognizeText(from: image)
             
             // 步骤 2: AI 分析账单信息
-            let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(from: recognizedText, context: modelContext)
+            let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(
+                from: recognizedText, 
+                context: modelContext,
+                preferredType: transactionType
+            )
             
             // 步骤 3: 填充表单
             await MainActor.run {
+                // 更新交易类型
+                if let typeString = expenseInfo.transactionType,
+                   let type = TransactionType(rawValue: typeString) {
+                    transactionType = type
+                    loadCategories()
+                }
+                
                 if let dateString = expenseInfo.date {
                     date = parseDate(from: dateString) ?? Date()
                 }
@@ -267,6 +296,7 @@ struct AddExpenseView: View {
         // 更新或添加类目
         if !mainCategory.isEmpty && !subCategory.isEmpty {
             _ = CategoryService.shared.addOrUpdateCategory(
+                transactionType: transactionType,
                 mainCategory: mainCategory,
                 subCategory: subCategory,
                 context: modelContext
@@ -274,6 +304,7 @@ struct AddExpenseView: View {
         }
         
         let expense = Expense(
+            transactionType: transactionType.rawValue,
             date: date,
             amount: amountValue,
             currency: currency,

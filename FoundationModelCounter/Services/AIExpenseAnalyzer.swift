@@ -14,19 +14,22 @@ import SwiftData
 struct ExpenseInfo: Identifiable {
     var id: Int
     
-    @Guide(description: "消费日期，格式：YYYY-MM-DD HH:mm:ss，使用账单上显示的本地时间，例如：2025-10-28 14:30:00")
+    @Guide(description: "交易类型，必须是：支出 或 收入")
+    var transactionType: String?
+    
+    @Guide(description: "交易日期，格式：YYYY-MM-DD HH:mm:ss，使用账单上显示的本地时间，例如：2025-10-28 14:30:00")
     var date: String?
     
-    @Guide(description: "消费金额，数字类型")
+    @Guide(description: "交易金额，数字类型（正数）")
     var amount: Double?
     
     @Guide(description: "币种代码，如：CNY、USD、EUR、JPY、GBP、HKD")
     var currency: String?
     
-    @Guide(description: "消费大类，优先从已有类目中选择，如需要可创建新类目")
+    @Guide(description: "交易大类，优先从已有类目中选择，如需要可创建新类目")
     var mainCategory: String?
     
-    @Guide(description: "消费小类，优先从已有类目中选择，如需要可创建新类目")
+    @Guide(description: "交易小类，优先从已有类目中选择，如需要可创建新类目")
     var subCategory: String?
     
     @Guide(description: "商品/服务用途的简短描述")
@@ -41,31 +44,36 @@ class AIExpenseAnalyzer {
     
     private init() {}
     
-    func analyzeExpense(from text: String, context: ModelContext) async throws -> ExpenseInfo {
+    func analyzeExpense(from text: String, context: ModelContext, preferredType: TransactionType? = nil) async throws -> ExpenseInfo {
         let config = AIConfiguration.shared
         
         switch config.currentProvider {
         case .apple:
-            return try await analyzeWithAppleAI(text: text, context: context)
+            return try await analyzeWithAppleAI(text: text, context: context, preferredType: preferredType)
         case .deepseek:
-            return try await analyzeWithDeepSeek(text: text, context: context)
+            return try await analyzeWithDeepSeek(text: text, context: context, preferredType: preferredType)
         }
     }
     
     // 使用 Apple 端侧 AI 分析
-    private func analyzeWithAppleAI(text: String, context: ModelContext) async throws -> ExpenseInfo {
-        // 获取已有类目
-        let existingCategories = CategoryService.shared.formatCategoriesForPrompt(context: context)
+    private func analyzeWithAppleAI(text: String, context: ModelContext, preferredType: TransactionType? = nil) async throws -> ExpenseInfo {
+        // 根据偏好类型获取类目
+        let expenseCategories = CategoryService.shared.formatCategoriesForPrompt(context: context, transactionType: .expense)
+        let incomeCategories = CategoryService.shared.formatCategoriesForPrompt(context: context, transactionType: .income)
         
         // 创建提示词说明
         let instructions = """
-        你是一个专业的账单分析助手。请从账单文本中提取财务信息。
+        你是一个专业的财务分析助手。请从账单或收入凭证文本中提取财务信息。
 
-        ## 分类体系（衣食住行）
+        ## 交易类型判断
 
-        \(existingCategories)
+        首先判断这是**支出**还是**收入**：
+        - 支出：购买商品、服务消费、转账支付等花钱的行为
+        - 收入：工资到账、转账收款、退款、分红、利息等收钱的行为
 
-        ## 分类说明
+        ## 支出分类体系（衣食住行）
+
+        \(expenseCategories)
 
         **衣** - 外在与形象相关：
         - 日常穿着：衣服、鞋袜、内衣等
@@ -92,23 +100,53 @@ class AIExpenseAnalyzer {
         - 旅行度假：机票、酒店、旅途中开销
         - 数码提升：手机、电脑、生产力设备
 
+        ## 收入分类体系
+
+        \(incomeCategories)
+
+        **职薪** - 工作相关收入：
+        - 工资薪金：基本工资、奖金、津贴
+        - 兼职收入：兼职、外包、咨询
+        - 绩效奖励：年终奖、项目奖金、提成
+        - 福利补贴：餐补、交通补贴、通讯补贴
+
+        **理财** - 投资理财收益：
+        - 投资收益：股票、基金、债券收益
+        - 利息收入：存款利息、债券利息
+        - 分红收益：股票分红、基金分红
+        - 租金收入：房租、车位租赁
+
+        **经营** - 生意经营收入：
+        - 销售收入：商品销售、服务收入
+        - 佣金收入：中介佣金、代理费
+        - 版权收入：版税、专利授权
+        - 广告收入：自媒体、内容创作
+
+        **其他** - 其他收入来源：
+        - 礼金红包：节日红包、生日礼金
+        - 退款返现：商品退款、信用卡返现
+        - 中奖收入：彩票、抽奖、奖品
+        - 其他收入：未分类的其他收入
+
         ## 分类规则
 
-        1. 大类必须是：衣、食、住、行 之一
-        2. 小类优先从上述已有类目中选择
-        3. 根据消费的**实际用途**来分类，不要根据支付渠道（如"网购"）分类
-        4. 如果账单内容与某个小类高度相关，直接使用该小类
-        5. 商户字段填写具体的商品或服务描述
+        1. transactionType 必须是：支出 或 收入
+        2. 支出大类必须是：衣、食、住、行 之一
+        3. 收入大类必须是：职薪、理财、经营、其他 之一
+        4. 小类优先从上述已有类目中选择
+        5. 根据交易的**实际用途**来分类，不要根据支付渠道分类
+        6. 商户字段填写具体的商品/服务/收入来源描述
 
         ## 输出要求
 
-        - 提取金额、时间、商品用途简述
-        - 只关注实际支付的产品
+        - 提取交易类型、金额、时间、用途简述
+        - 只关注实际的交易信息
         - 忽略广告信息
         - 如果某些信息无法提取，设置为 null
         - 日期格式：YYYY-MM-DD HH:mm:ss（本地时间，不要UTC）
         - 日期只有日期没时间时，使用 12:00:00
         - 币种默认为 CNY
+        - 金额始终为正数
         """
         
         // 创建 LanguageModelSession
@@ -118,11 +156,11 @@ class AIExpenseAnalyzer {
         )
         
         // 构建用户提示词
-        let userPrompt = """
-        请分析以下账单文本并提取账目信息：
-        
-        \(text)
-        """
+        var userPrompt = "请分析以下文本并提取财务信息"
+        if let type = preferredType {
+            userPrompt += "（这是一条\(type.rawValue)记录）"
+        }
+        userPrompt += "：\n\n\(text)"
         
         // 使用 streamResponse API 生成结构化输出
         var result: ExpenseInfo?
@@ -141,7 +179,7 @@ class AIExpenseAnalyzer {
     }
     
     // 使用 DeepSeek API 分析
-    private func analyzeWithDeepSeek(text: String, context: ModelContext) async throws -> ExpenseInfo {
+    private func analyzeWithDeepSeek(text: String, context: ModelContext, preferredType: TransactionType? = nil) async throws -> ExpenseInfo {
         let config = AIConfiguration.shared
         
         guard !config.deepseekAPIKey.isEmpty else {
@@ -149,11 +187,14 @@ class AIExpenseAnalyzer {
         }
         
         // 获取已有类目
-        let existingCategories = CategoryService.shared.formatCategoriesForPrompt(context: context)
+        let expenseCategories = CategoryService.shared.formatCategoriesForPrompt(context: context, transactionType: .expense)
+        let incomeCategories = CategoryService.shared.formatCategoriesForPrompt(context: context, transactionType: .income)
         
         let jsonString = try await DeepSeekService.shared.analyzeExpense(
             from: text,
-            existingCategories: existingCategories,
+            expenseCategories: expenseCategories,
+            incomeCategories: incomeCategories,
+            preferredType: preferredType,
             apiKey: config.deepseekAPIKey
         )
         
@@ -170,6 +211,7 @@ class AIExpenseAnalyzer {
         
         // 定义解码结构
         struct DeepSeekExpenseResult: Codable {
+            var transactionType: String?
             var date: String?
             var amount: Double?
             var currency: String?
@@ -185,6 +227,7 @@ class AIExpenseAnalyzer {
         // 转换为 ExpenseInfo
         return ExpenseInfo(
             id: 0,
+            transactionType: result.transactionType,
             date: result.date,
             amount: result.amount,
             currency: result.currency,
