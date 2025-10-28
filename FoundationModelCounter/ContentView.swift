@@ -218,31 +218,22 @@ struct ExpenseRow: View {
     }
     
     var categoryColor: Color {
-        switch expense.mainCategory {
-        case "服饰": return .pink
-        case "餐饮": return .orange
-        case "交通": return .blue
-        case "居家": return .green
-        case "数码": return .purple
-        case "医疗": return .red
-        case "娱乐": return .cyan
-        case "学习": return .indigo
+        let colorName = CategoryService.getMainCategoryColor(for: expense.mainCategory)
+        switch colorName {
+        case "pink": return .pink
+        case "orange": return .orange
+        case "green": return .green
+        case "blue": return .blue
         default: return .gray
         }
     }
     
     var categoryIcon: String {
-        switch expense.mainCategory {
-        case "服饰": return "tshirt.fill"
-        case "餐饮": return "fork.knife"
-        case "交通": return "car.fill"
-        case "居家": return "house.fill"
-        case "数码": return "laptopcomputer"
-        case "医疗": return "cross.case.fill"
-        case "娱乐": return "gamecontroller.fill"
-        case "学习": return "book.fill"
-        default: return "ellipsis.circle.fill"
-        }
+        // 优先使用小类图标，提供更精确的视觉反馈
+        return CategoryService.getSubCategoryIcon(
+            for: expense.mainCategory,
+            subCategory: expense.subCategory
+        )
     }
 }
 

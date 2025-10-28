@@ -18,64 +18,6 @@
             endingLineNumber = "183"
             landmarkName = "processImage(_:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "E77F5459-F464-43BB-8F15-C925B30B61C3 - bd399aee8ced944f"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(1) suspend resume partial function for FoundationModelCounter.AddExpenseView.processImage(__C.UIImage) async -&gt; ()"
-                  moduleName = "FoundationModelCounter.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/didi/Documents/FoundationModelCounter/FoundationModelCounter/Views/AddExpenseView.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "183"
-                  endingLineNumber = "183">
-               </Location>
-               <Location
-                  uuid = "E77F5459-F464-43BB-8F15-C925B30B61C3 - dee0d8dafb912f19"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(2) await resume partial function for FoundationModelCounter.AddExpenseView.processImage(__C.UIImage) async -&gt; ()"
-                  moduleName = "FoundationModelCounter.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/didi/Documents/FoundationModelCounter/FoundationModelCounter/Views/AddExpenseView.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "183"
-                  endingLineNumber = "183">
-               </Location>
-               <Location
-                  uuid = "E77F5459-F464-43BB-8F15-C925B30B61C3 - 4ade45887626d849"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for FoundationModelCounter.AddExpenseView.processImage(__C.UIImage) async -&gt; ()"
-                  moduleName = "FoundationModelCounter.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/didi/Documents/FoundationModelCounter/FoundationModelCounter/Views/AddExpenseView.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "183"
-                  endingLineNumber = "183">
-               </Location>
-               <Location
-                  uuid = "E77F5459-F464-43BB-8F15-C925B30B61C3 - aad3c06c95489902"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(10) suspend resume partial function for FoundationModelCounter.AddExpenseView.processImage(__C.UIImage) async -&gt; ()"
-                  moduleName = "FoundationModelCounter.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/didi/Documents/FoundationModelCounter/FoundationModelCounter/Views/AddExpenseView.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "183"
-                  endingLineNumber = "183">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>
