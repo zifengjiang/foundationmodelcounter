@@ -36,7 +36,7 @@ struct QuickExpenseIntent: AppIntent {
         }
         
         // 步骤2: OCR识别文字
-        let recognizedText = try await OCRService.shared.recognizeText(from: uiImage)
+        let recognizedText = try await OCRService.shared.recognizeText(from: uiImage, isScreenShot: true)
         
         // 步骤3: 获取ModelContext
         let container = try getModelContainer()

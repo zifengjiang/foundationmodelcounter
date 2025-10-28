@@ -399,7 +399,8 @@ struct QuickExpenseIntent: AppIntent {
             throw QuickExpenseError.invalidImage
         }
         
-        // 2. OCR 识别
+        // 2. OCR 识别（自动裁剪状态栏）
+        // OCRService 会自动裁剪顶部60pt，排除时间、电量等干扰信息
         let text = try await OCRService.shared.recognizeText(from: uiImage)
         
         // 3. AI 分析
