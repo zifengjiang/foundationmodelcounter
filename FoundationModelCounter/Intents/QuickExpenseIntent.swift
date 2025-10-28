@@ -66,6 +66,26 @@ struct QuickExpenseIntent: AppIntent {
         let merchant = expenseInfo.merchant ?? ""
         let note = expenseInfo.note ?? ""
         
+        // 步骤6: 检查重复记账（基于时间和金额）
+        if try checkDuplicateExpense(
+            amount: amount,
+            date: date,
+            transactionType: finalTransactionType,
+            context: context
+        ) {
+            // 发现重复记账，返回提示而不是报错
+            let duplicateMessage = """
+            ⚠️ 检测到可能的重复记账
+            
+            金额: \(currency) \(String(format: "%.2f", amount))
+            时间: \(formatDate(date))
+            
+            已跳过保存，避免重复。
+            如需强制添加，请在 App 中手动添加。
+            """
+            return .result(dialog: IntentDialog(stringLiteral: duplicateMessage))
+        }
+        
         // 更新或添加类目
         let transType = TransactionType(rawValue: finalTransactionType) ?? preferredType
         _ = CategoryService.shared.addOrUpdateCategory(
@@ -153,6 +173,42 @@ struct QuickExpenseIntent: AppIntent {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: date)
+    }
+    
+    /// 检查是否存在重复记账
+    /// 判断标准：相同金额 + 时间接近（±2分钟内）+ 相同交易类型
+    /// - Returns: true表示发现重复，false表示无重复
+    private func checkDuplicateExpense(
+        amount: Double,
+        date: Date,
+        transactionType: String,
+        context: ModelContext
+    ) throws -> Bool {
+        // 定义时间窗口：前后2分钟
+        let timeWindow: TimeInterval = 2 * 60  // 2分钟
+        let startDate = date.addingTimeInterval(-timeWindow)
+        let endDate = date.addingTimeInterval(timeWindow)
+        
+        // 定义金额误差范围：±0.01
+        let amountTolerance = 0.01
+        let minAmount = amount - amountTolerance
+        let maxAmount = amount + amountTolerance
+        
+        // 查询相同交易类型、金额接近、时间接近的记录
+        let descriptor = FetchDescriptor<Expense>(
+            predicate: #Predicate { expense in
+                expense.transactionType == transactionType &&
+                expense.amount >= minAmount &&
+                expense.amount <= maxAmount &&
+                expense.date >= startDate &&
+                expense.date <= endDate
+            }
+        )
+        
+        let existingExpenses = try context.fetch(descriptor)
+        
+        // 如果找到任何匹配的记录，认为是重复
+        return !existingExpenses.isEmpty
     }
 }
 

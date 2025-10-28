@@ -5,7 +5,7 @@
 ## 功能特性
 
 - 📸 **智能识别**：拍照或选择图片后自动识别账单信息，自动排除状态栏干扰
-- ⚡️ **快捷指令**：支持 iOS 快捷指令，配合 Action Button 一键截屏记账
+- ⚡️ **快捷指令**：支持 iOS 快捷指令，配合 Action Button 一键截屏记账，智能防重复
 - 🤖 **双 AI 支持**：支持 Apple 端侧 AI 和 DeepSeek API 两种分析方式
   - **Apple 端侧 AI**：使用设备端 FoundationModels，保护隐私，无需联网
   - **DeepSeek API**：使用云端 API，需要配置 API Key
@@ -222,6 +222,7 @@ for try await partialResult in responseStream {
 - ✅ **快捷指令支持**：现在可以通过 iOS 快捷指令在 app 外快速记账
 - ✅ **Action Button 集成**：完美支持 iPhone 15 Pro/Pro Max 的 Action Button
 - ✅ **一键截屏记账**：长按 Action Button 自动截屏+AI识别+保存，3秒完成
+- ✅ **智能防重复**：自动检测重复记账（相同金额+时间±2分钟），避免误触
 - ✅ **背部轻点**：其他机型可使用背部轻点实现类似体验
 - ✅ **Siri 语音命令**：支持通过 Siri 触发记账
 

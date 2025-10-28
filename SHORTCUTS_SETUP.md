@@ -400,18 +400,24 @@ struct QuickExpenseIntent: AppIntent {
         }
         
         // 2. OCR 识别（自动裁剪状态栏）
-        // OCRService 会自动裁剪顶部60pt，排除时间、电量等干扰信息
-        let text = try await OCRService.shared.recognizeText(from: uiImage)
+        // OCRService 会自动裁剪顶部120px，排除时间、电量等干扰信息
+        let text = try await OCRService.shared.recognizeText(from: uiImage, isScreenShot: true)
         
         // 3. AI 分析
         let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(...)
         
-        // 4. 保存数据
+        // 4. 重复检测
+        // 检查是否存在相同金额（±0.01）和时间（±2分钟）的记录
+        if try checkDuplicateExpense(...) {
+            return .result(dialog: "⚠️ 检测到可能的重复记账")
+        }
+        
+        // 5. 保存数据
         let expense = Expense(...)
         context.insert(expense)
         try context.save()
         
-        // 5. 返回结果
+        // 6. 返回结果
         return .result(dialog: "✅ 记账成功！")
     }
 }
@@ -431,6 +437,15 @@ struct QuickExpenseIntent: AppIntent {
 - 使用 Apple AI 时，所有处理在设备端完成
 - 账单数据存储在本地 SwiftData 数据库
 - 快捷指令在沙盒中运行，安全隔离
+
+### 防重复机制
+- **检测规则**: 相同交易类型 + 金额相同（±0.01） + 时间接近（±2分钟）
+- **防止场景**:
+  - 误触 Action Button
+  - 多次截同一个账单
+  - 快速连续操作
+- **友好处理**: 发现重复时提示而不报错
+- **灵活性**: 如需强制添加，可在 App 中手动操作
 
 ## 配置清单
 
