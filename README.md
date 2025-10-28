@@ -5,6 +5,7 @@
 ## 功能特性
 
 - 📸 **智能识别**：拍照或选择图片后自动识别账单信息
+- ⚡️ **快捷指令**：支持 iOS 快捷指令，配合 Action Button 一键截屏记账
 - 🤖 **双 AI 支持**：支持 Apple 端侧 AI 和 DeepSeek API 两种分析方式
   - **Apple 端侧 AI**：使用设备端 FoundationModels，保护隐私，无需联网
   - **DeepSeek API**：使用云端 API，需要配置 API Key
@@ -104,6 +105,13 @@
    - 点击"删除"按钮
    - 或在类目管理中左滑删除类目
 
+7. **使用快捷指令**（新功能！⚡️）
+
+   - 创建快捷指令：截取屏幕 → 图片记账
+   - 配置 Action Button（iPhone 15 Pro/Pro Max）或背部轻点
+   - **一键完成**：长按 Action Button 自动截屏并记账
+   - 详细使用说明请参考：[快捷指令使用指南.md](快捷指令使用指南.md)
+
 ## 项目结构
 
 ```
@@ -117,6 +125,8 @@ FoundationModelCounter/
 │   ├── AIExpenseAnalyzer.swift    # AI 账单分析服务（统一接口）
 │   ├── DeepSeekService.swift      # DeepSeek API 服务
 │   └── CategoryService.swift      # 类目管理服务
+├── Intents/
+│   └── QuickExpenseIntent.swift   # 快捷指令集成（图片记账）
 ├── Views/
 │   ├── AddExpenseView.swift       # 添加账目视图
 │   ├── EditExpenseView.swift      # 编辑账目视图
@@ -150,7 +160,20 @@ ExpenseInfo                  Expense
 <key>NSCameraUsageDescription</key>
 <string>需要访问相机来拍摄账单</string>
 <key>NSPhotoLibraryUsageDescription</key>
-<string>需要访问相册来选择账单图片</string>
+<string>需要访问相册来获取截屏图片进行记账</string>
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>需要访问相册来保存账单图片</string>
+```
+
+### Entitlements 配置
+
+在 FoundationModelCounter.entitlements 中需要包含：
+
+```xml
+<key>com.apple.modelmanager.inference</key>
+<true/>
+<key>com.apple.security.device.camera</key>
+<true/>
 ```
 
 ## AI 结构化输出
@@ -194,14 +217,23 @@ for try await partialResult in responseStream {
 3. **手动修改**：AI 提取的信息可以手动修改
 4. **图片存储**：账单图片会被压缩存储以节省空间
 
+## 最新更新
+
+- ✅ **快捷指令支持**：现在可以通过 iOS 快捷指令在 app 外快速记账
+- ✅ **Action Button 集成**：完美支持 iPhone 15 Pro/Pro Max 的 Action Button
+- ✅ **一键截屏记账**：长按 Action Button 自动截屏+AI识别+保存，3秒完成
+- ✅ **背部轻点**：其他机型可使用背部轻点实现类似体验
+- ✅ **Siri 语音命令**：支持通过 Siri 触发记账
+
 ## 未来改进
 
 - [ ] 添加月度/年度统计报表
 - [ ] 支持导出数据为 CSV/Excel
 - [ ] 添加预算管理功能
-- [ ] 支持收入记录
+- [x] 支持收入记录（已完成）
 - [ ] 添加图表可视化
 - [ ] 支持多账户管理
+- [x] iOS 快捷指令集成（已完成）
 
 ## 开发者
 
