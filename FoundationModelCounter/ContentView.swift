@@ -20,6 +20,8 @@ struct ContentView: View {
     @State private var showCategoryManager = false
     @State private var selectedMonth: Date = Date() // 默认选择当月
     @State private var dragOffset: CGFloat = 0
+    @State private var searchText = ""
+    @State private var isSearching = false
     
     // 当月的起止日期
     var currentMonthRange: (start: Date, end: Date) {
@@ -43,9 +45,22 @@ struct ContentView: View {
     var filteredExpenses: [Expense] {
         // 先按月份过滤
         var result = currentMonthExpenses.filter { $0.transactionType == selectedTransactionType.rawValue }
+        
+        // 按分类过滤
         if let category = selectedCategory {
             result = result.filter { $0.mainCategory == category }
         }
+        
+        // 按搜索文本过滤
+        if !searchText.isEmpty {
+            result = result.filter { expense in
+                expense.merchant.localizedCaseInsensitiveContains(searchText) ||
+                expense.note.localizedCaseInsensitiveContains(searchText) ||
+                expense.mainCategory.localizedCaseInsensitiveContains(searchText) ||
+                expense.subCategory.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        
         return result
     }
     
@@ -195,7 +210,7 @@ struct ContentView: View {
                     
                     Divider()
                     
-                    // 交易类型切换
+                    // 交易类型切换和搜索按钮
                     HStack {
                         Picker("交易类型", selection: $selectedTransactionType) {
                             Text("支出").tag(TransactionType.expense)
@@ -206,6 +221,20 @@ struct ContentView: View {
                             selectedCategory = nil // 切换类型时清除分类筛选
                         }
                         
+                        // 搜索按钮
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3)) {
+                                isSearching.toggle()
+                                if !isSearching {
+                                    searchText = ""
+                                }
+                            }
+                        }) {
+                            Image(systemName: isSearching ? "xmark.circle.fill" : "magnifyingglass")
+                                .foregroundStyle(isSearching ? .red : .accentColor)
+                                .font(.title3)
+                        }
+                        
                         if let category = selectedCategory {
                             Button(action: { selectedCategory = nil }) {
                                 Image(systemName: "xmark.circle.fill")
@@ -214,6 +243,29 @@ struct ContentView: View {
                         }
                     }
                     .padding(.vertical, 8)
+                    
+                    // 搜索框
+                    if isSearching {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            
+                            TextField("搜索商家、备注或分类", text: $searchText)
+                                .textFieldStyle(.plain)
+                                .autocorrectionDisabled()
+                            
+                            if !searchText.isEmpty {
+                                Button(action: { searchText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     
                     // 当前类型的金额
                     HStack(alignment: .firstTextBaseline) {
@@ -288,7 +340,11 @@ struct ContentView: View {
                 
                 // 账目列表
                 if filteredExpenses.isEmpty {
-                    EmptyStateView(transactionType: selectedTransactionType)
+                    if !searchText.isEmpty {
+                        SearchEmptyView(searchText: searchText)
+                    } else {
+                        EmptyStateView(transactionType: selectedTransactionType)
+                    }
                 } else {
                     List {
                         ForEach(groupedExpenses, id: \.0) { date, expensesForDate in
@@ -313,7 +369,6 @@ struct ContentView: View {
                     .listStyle(.insetGrouped)
                 }
             }
-            .navigationTitle("记账本")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
@@ -459,6 +514,55 @@ struct EmptyStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("暂无\(transactionType.rawValue)记录，点击右上角加号按钮添加")
+    }
+}
+
+// MARK: - Search Empty View
+
+struct SearchEmptyView: View {
+    let searchText: String
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(isAnimating ? 1.1 : 1.0)
+                
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 50))
+                    .foregroundStyle(Color.orange.opacity(0.6))
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    isAnimating = true
+                }
+            }
+            
+            Text("未找到相关记录")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+            
+            Text("搜索 \"\(searchText)\" 没有找到匹配的记录")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Text("试试其他关键词或清除筛选条件")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("搜索\(searchText)未找到相关记录")
     }
 }
 
