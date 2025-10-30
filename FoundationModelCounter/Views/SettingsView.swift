@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import SwiftData
+internal import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -13,10 +15,26 @@ struct SettingsView: View {
     @Bindable var config = AIConfiguration.shared
     @Bindable var themeManager = ThemeManager.shared
     
+    @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    
     @State private var showAPIKeyAlert = false
     @State private var tempAPIKey = ""
     @State private var showAPIKeyConfig = false
-    @State private var showExportOptions = false
+    @State private var showExportSheet = false
+    @State private var exportedFileURL: URL?
+    @State private var isExporting = false
+    @State private var exportError: String?
+    
+    @State private var showImportPicker = false
+    @State private var isImporting = false
+    @State private var importError: String?
+    @State private var importResult: DataImportService.ImportResult?
+    @State private var showImportResult = false
+    
+    @State private var progressMessage = ""
+    @State private var progressValue: Double = 0.0
+    @State private var showProgress = false
+    
     @AppStorage("defaultCurrency") private var defaultCurrency = "CNY"
     
     var body: some View {
@@ -121,23 +139,71 @@ struct SettingsView: View {
                 
                 // 数据管理
                 Section {
-                    Button(action: { showExportOptions = true }) {
+                    // 导入数据
+                    Button(action: { 
+                        showImportPicker = true
+                    }) {
                         HStack {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 30)
+                            if isImporting {
+                                ProgressView()
+                                    .frame(width: 30)
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                                    .foregroundStyle(Color.accentColor)
+                                    .frame(width: 30)
+                            }
+                            Text("导入数据")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if !isImporting {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .disabled(isImporting)
+                    
+                    // 导出数据
+                    Button(action: { 
+                        Task {
+                            await exportData()
+                        }
+                    }) {
+                        HStack {
+                            if isExporting {
+                                ProgressView()
+                                    .frame(width: 30)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .foregroundStyle(Color.accentColor)
+                                    .frame(width: 30)
+                            }
                             Text("导出数据")
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            if !isExporting {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .disabled(isExporting || expenses.isEmpty)
+                    
+                    if expenses.isEmpty {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text("暂无数据可导出")
                                 .font(.caption)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
                     Text("数据管理")
                 } footer: {
-                    Text("导出您的账目数据为 CSV 或 JSON 格式")
+                    Text("导入或导出账目数据，当前共 \(expenses.count) 条记录")
                 }
                 
                 // 关于
@@ -161,32 +227,169 @@ struct SettingsView: View {
                     }
                 }
             }
-            .confirmationDialog("导出数据", isPresented: $showExportOptions) {
-                Button("导出为 CSV") {
-                    exportAsCSV()
+            .sheet(isPresented: $showExportSheet) {
+                if let url = exportedFileURL {
+                    ShareSheet(items: [url])
                 }
-                Button("导出为 JSON") {
-                    exportAsJSON()
+            }
+            .fileImporter(
+                isPresented: $showImportPicker,
+                allowedContentTypes: [.zip],
+                allowsMultipleSelection: false
+            ) { result in
+                Task {
+                    await handleImportFile(result: result)
                 }
-                Button("取消", role: .cancel) { }
+            }
+            .alert("导出失败", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
+                Button("确定", role: .cancel) {
+                    exportError = nil
+                }
             } message: {
-                Text("选择导出格式")
+                if let error = exportError {
+                    Text(error)
+                }
+            }
+            .alert("导入失败", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("确定", role: .cancel) {
+                    importError = nil
+                }
+            } message: {
+                if let error = importError {
+                    Text(error)
+                }
+            }
+            .alert("导入完成", isPresented: $showImportResult) {
+                Button("确定", role: .cancel) { }
+            } message: {
+                if let result = importResult {
+                    Text("总计：\(result.totalCount) 条\n成功：\(result.importedCount) 条\n跳过：\(result.skippedCount) 条\n失败：\(result.failedCount) 条")
+                }
+            }
+            .progressToast(
+                isPresented: $showProgress,
+                message: progressMessage,
+                progress: progressValue
+            )
+        }
+    }
+    
+    // MARK: - 导出数据
+    
+    private func exportData() async {
+        isExporting = true
+        exportError = nil
+        
+        await MainActor.run {
+            showProgress = true
+            progressMessage = "准备导出..."
+            progressValue = 0.0
+        }
+        
+        do {
+            let url = try await DataExportService.shared.exportData(expenses: expenses) { message, progress in
+                Task { @MainActor in
+                    progressMessage = message
+                    progressValue = progress
+                }
+            }
+            
+            await MainActor.run {
+                showProgress = false
+                exportedFileURL = url
+                showExportSheet = true
+                isExporting = false
+                
+                let impact = UINotificationFeedbackGenerator()
+                impact.notificationOccurred(.success)
+            }
+        } catch {
+            await MainActor.run {
+                showProgress = false
+                exportError = "导出失败：\(error.localizedDescription)"
+                isExporting = false
+                
+                let impact = UINotificationFeedbackGenerator()
+                impact.notificationOccurred(.error)
             }
         }
     }
     
-    private func exportAsCSV() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        // TODO: 实现 CSV 导出功能
-        print("导出 CSV")
+    // MARK: - 导入数据
+    
+    private func handleImportFile(result: Result<[URL], Error>) async {
+        isImporting = true
+        importError = nil
+        
+        await MainActor.run {
+            showProgress = true
+            progressMessage = "准备导入..."
+            progressValue = 0.0
+        }
+        
+        do {
+            guard let fileURL = try result.get().first else {
+                throw NSError(domain: "SettingsView", code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "未选择文件"])
+            }
+            
+            // 开始访问安全范围资源
+            guard fileURL.startAccessingSecurityScopedResource() else {
+                throw NSError(domain: "SettingsView", code: -2,
+                            userInfo: [NSLocalizedDescriptionKey: "无法访问文件"])
+            }
+            
+            defer {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+            
+            let result = try await DataImportService.shared.importData(from: fileURL, context: modelContext) { message, progress in
+                Task { @MainActor in
+                    progressMessage = message
+                    progressValue = progress
+                }
+            }
+            
+            await MainActor.run {
+                showProgress = false
+                importResult = result
+                showImportResult = true
+                isImporting = false
+                
+                let impact = UINotificationFeedbackGenerator()
+                impact.notificationOccurred(.success)
+            }
+        } catch {
+            await MainActor.run {
+                showProgress = false
+                importError = "导入失败：\(error.localizedDescription)"
+                isImporting = false
+                
+                let impact = UINotificationFeedbackGenerator()
+                impact.notificationOccurred(.error)
+            }
+        }
+    }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        return controller
     }
     
-    private func exportAsJSON() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        // TODO: 实现 JSON 导出功能
-        print("导出 JSON")
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No update needed
     }
 }
 
