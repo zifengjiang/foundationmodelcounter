@@ -18,9 +18,30 @@ struct ContentView: View {
     @State private var selectedCategory: String?
     @State private var showSettings = false
     @State private var showCategoryManager = false
+    @State private var selectedMonth: Date = Date() // 默认选择当月
+    
+    // 当月的起止日期
+    var currentMonthRange: (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: selectedMonth)
+        let startOfMonth = calendar.date(from: components)!
+        // 下个月第一天（作为结束边界）
+        let nextMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth)!
+        return (startOfMonth, nextMonth)
+    }
+    
+    // 当月的所有记录
+    var currentMonthExpenses: [Expense] {
+        let range = currentMonthRange
+        return expenses.filter { expense in
+            // 大于等于月初 且 小于下月初（这样可以包含整个月的所有时间）
+            expense.date >= range.start && expense.date < range.end
+        }
+    }
     
     var filteredExpenses: [Expense] {
-        var result = expenses.filter { $0.transactionType == selectedTransactionType.rawValue }
+        // 先按月份过滤
+        var result = currentMonthExpenses.filter { $0.transactionType == selectedTransactionType.rawValue }
         if let category = selectedCategory {
             result = result.filter { $0.mainCategory == category }
         }
@@ -31,18 +52,44 @@ struct ContentView: View {
         filteredExpenses.reduce(0) { $0 + $1.amount }
     }
     
+    // 当月收入总额
     var totalIncome: Double {
-        expenses.filter { $0.transactionType == TransactionType.income.rawValue }
+        currentMonthExpenses
+            .filter { $0.transactionType == TransactionType.income.rawValue }
             .reduce(0) { $0 + $1.amount }
     }
     
+    // 当月支出总额
     var totalExpense: Double {
-        expenses.filter { $0.transactionType == TransactionType.expense.rawValue }
+        currentMonthExpenses
+            .filter { $0.transactionType == TransactionType.expense.rawValue }
             .reduce(0) { $0 + $1.amount }
     }
     
+    // 当月余额
     var balance: Double {
         totalIncome - totalExpense
+    }
+    
+    // 格式化月份显示
+    var monthTitle: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        let calendar = Calendar.current
+        
+        // 判断是否为当月
+        if calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month) {
+            return "本月"
+        } else {
+            formatter.dateFormat = "yyyy年M月"
+            return formatter.string(from: selectedMonth)
+        }
+    }
+    
+    // 判断是否可以前进到下个月
+    var canGoToNextMonth: Bool {
+        let calendar = Calendar.current
+        return !calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
     }
     
     var groupedExpenses: [(String, [Expense])] {
@@ -89,6 +136,31 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 // 统计卡片
                 VStack(spacing: 12) {
+                    // 月份选择器
+                    HStack {
+                        Button(action: goToPreviousMonth) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3)
+                                .foregroundStyle(.primary)
+                        }
+                        
+                        Spacer()
+                        
+                        Text(monthTitle)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        
+                        Spacer()
+                        
+                        Button(action: goToNextMonth) {
+                            Image(systemName: "chevron.right")
+                                .font(.title3)
+                                .foregroundStyle(canGoToNextMonth ? .primary : .secondary)
+                        }
+                        .disabled(!canGoToNextMonth)
+                    }
+                    .padding(.bottom, 12)
+                    
                     // 总览统计（收入、支出、余额）
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -200,7 +272,7 @@ struct ContentView: View {
                 } else {
                     List {
                         ForEach(groupedExpenses, id: \.0) { date, expensesForDate in
-                            Section(header: Text(date)) {
+                            Section {
                                 ForEach(expensesForDate) { expense in
                                     NavigationLink(destination: ExpenseDetailView(expense: expense)) {
                                         ExpenseRow(expense: expense)
@@ -209,6 +281,12 @@ struct ContentView: View {
                                 .onDelete { offsets in
                                     deleteExpenses(offsets: offsets, from: expensesForDate)
                                 }
+                            } header: {
+                                DaySummaryHeader(
+                                    date: date,
+                                    expenses: expensesForDate,
+                                    selectedType: selectedTransactionType
+                                )
                             }
                         }
                     }
@@ -257,6 +335,29 @@ struct ContentView: View {
         withAnimation {
             for index in offsets {
                 modelContext.delete(expenses[index])
+            }
+        }
+    }
+    
+    // 前往上个月
+    private func goToPreviousMonth() {
+        let calendar = Calendar.current
+        if let newDate = calendar.date(byAdding: .month, value: -1, to: selectedMonth) {
+            withAnimation {
+                selectedMonth = newDate
+                selectedCategory = nil // 切换月份时清除分类筛选
+            }
+        }
+    }
+    
+    // 前往下个月
+    private func goToNextMonth() {
+        guard canGoToNextMonth else { return }
+        let calendar = Calendar.current
+        if let newDate = calendar.date(byAdding: .month, value: 1, to: selectedMonth) {
+            withAnimation {
+                selectedMonth = newDate
+                selectedCategory = nil // 切换月份时清除分类筛选
             }
         }
     }
@@ -348,6 +449,85 @@ struct ExpenseRow: View {
         return formatter.string(from: date)
     }
 }
+
+// MARK: - Day Summary Header
+
+struct DaySummaryHeader: View {
+    let date: String
+    let expenses: [Expense]
+    let selectedType: TransactionType
+    
+    // 计算当天的收入和支出
+    var dayIncome: Double {
+        expenses
+            .filter { $0.transactionType == TransactionType.income.rawValue }
+            .reduce(0) { $0 + $1.amount }
+    }
+    
+    var dayExpense: Double {
+        expenses
+            .filter { $0.transactionType == TransactionType.expense.rawValue }
+            .reduce(0) { $0 + $1.amount }
+    }
+    
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            // 日期
+            Text(date)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            
+            Spacer()
+            
+            // 显示当天的收支统计
+            HStack(spacing: 12) {
+                // 收入
+                if dayIncome > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("收入")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "%.2f", dayIncome))
+                            .font(.subheadline)
+                            .fontWeight(selectedType == .income ? .bold : .semibold)
+                            .foregroundStyle(.green)
+                    }
+                }
+                
+                // 支出
+                if dayExpense > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("支出")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "%.2f", dayExpense))
+                            .font(.subheadline)
+                            .fontWeight(selectedType == .expense ? .bold : .semibold)
+                            .foregroundStyle(.red)
+                    }
+                }
+                
+                // 净额（如果两种类型都有）
+                if dayIncome > 0 && dayExpense > 0 {
+                    let balance = dayIncome - dayExpense
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("净额")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "%+.2f", balance))
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(balance >= 0 ? .green : .red)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+    }
+}
+
+// MARK: - Category Chip
 
 struct CategoryChip: View {
     let category: String
