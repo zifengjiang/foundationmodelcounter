@@ -28,6 +28,7 @@ struct EditExpenseView: View {
     @State private var errorMessage: String?
     
     let currencies = ["CNY", "USD", "EUR", "JPY", "GBP", "HKD"]
+    let quickAmounts = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
     
     init(expense: Expense) {
         self.expense = expense
@@ -56,34 +57,85 @@ struct EditExpenseView: View {
                     
                     DatePicker("日期", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     
-                    HStack {
-                        Text("金额")
-                        TextField("0.00", text: $amount)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("金额")
+                            Spacer()
+                            TextField("0.00", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 150)
+                            
+                            Picker("", selection: $currency) {
+                                ForEach(currencies, id: \.self) { curr in
+                                    Text(curr).tag(curr)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 80)
+                        }
                         
-                        Picker("", selection: $currency) {
-                            ForEach(currencies, id: \.self) { curr in
-                                Text(curr).tag(curr)
+                        // 快速金额选择
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(quickAmounts, id: \.self) { quickAmount in
+                                    Button(action: {
+                                        amount = String(format: "%.0f", quickAmount)
+                                        let impact = UIImpactFeedbackGenerator(style: .light)
+                                        impact.impactOccurred()
+                                    }) {
+                                        Text("¥\(Int(quickAmount))")
+                                            .font(.caption)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(Color.accentColor.opacity(0.1))
+                                            .foregroundStyle(Color.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                }
                             }
                         }
-                        .labelsHidden()
-                        .frame(width: 80)
                     }
                     
-                    HStack {
-                        Text("大类")
-                        TextField("输入或选择", text: $mainCategory)
-                            .multilineTextAlignment(.trailing)
-                            .onChange(of: mainCategory) { oldValue, newValue in
+                    // 大类选择 - 使用 Menu
+                    Menu {
+                        ForEach(availableMainCategories, id: \.self) { category in
+                            Button(category) {
+                                mainCategory = category
                                 updateSubCategories()
                             }
+                        }
+                    } label: {
+                        HStack {
+                            Text("大类")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(mainCategory)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     
-                    HStack {
-                        Text("小类")
-                        TextField("输入或选择", text: $subCategory)
-                            .multilineTextAlignment(.trailing)
+                    // 小类选择 - 使用 Menu
+                    Menu {
+                        ForEach(availableSubCategories, id: \.self) { category in
+                            Button(category) {
+                                subCategory = category
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("小类")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(subCategory)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     
                     TextField(transactionType == .expense ? "商户/商品" : "收入来源", text: $merchant)
@@ -163,6 +215,9 @@ struct EditExpenseView: View {
             errorMessage = "请输入有效的金额"
             return
         }
+        
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
         
         // 更新或添加类目
         if !mainCategory.isEmpty && !subCategory.isEmpty {

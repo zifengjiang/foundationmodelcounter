@@ -8,6 +8,8 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Main View
+
 struct CategoryManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -52,43 +54,24 @@ struct CategoryManagerView: View {
                 
                 List {
                     ForEach(groupedCategories, id: \.0) { mainCategory, subCategories in
-                        Section(header:
-                                    HStack {
-                            Image(systemName: CategoryService.getMainCategoryIcon(for: mainCategory, transactionType: selectedTransactionType))
-                            Text(mainCategory)
-                            Spacer()
-                            Text("\(subCategories.count) 个小类")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        ) {
+                        Section(header: CategorySectionHeader(
+                            mainCategory: mainCategory,
+                            count: subCategories.count,
+                            transactionType: selectedTransactionType
+                        )) {
                             ForEach(subCategories) { category in
-                                Button {
-                                    editingCategory = category
-                                    newMainCategory = category.mainCategory
-                                    newSubCategory = category.subCategory
-                                    showEditCategory = true
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(category.subCategory)
-                                                .font(.body)
-                                                .foregroundStyle(.primary)
-                                            
-                                            if category.usageCount > 0 {
-                                                Text("使用 \(category.usageCount) 次")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
+                                CategoryListItem(
+                                    category: category,
+                                    transactionType: selectedTransactionType,
+                                    onTap: {
+                                        let impact = UIImpactFeedbackGenerator(style: .light)
+                                        impact.impactOccurred()
+                                        editingCategory = category
+                                        newMainCategory = category.mainCategory
+                                        newSubCategory = category.subCategory
+                                        showEditCategory = true
                                     }
-                                }
+                                )
                             }
                             .onDelete { indexSet in
                                 deleteCategories(at: indexSet, from: subCategories)
@@ -97,88 +80,92 @@ struct CategoryManagerView: View {
                     }
                     .listStyle(.insetGrouped)
                 }
-                .navigationTitle("\(selectedTransactionType.rawValue)类目管理")
-                .navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $searchText, prompt: "搜索类目")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("完成") {
-                            dismiss()
-                        }
-                    }
-                    
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: { showAddCategory = true }) {
-                            Label("添加类目", systemImage: "plus")
-                        }
-                    }
+            }
+        }
+        .navigationTitle("\(selectedTransactionType.rawValue)类目管理")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "搜索类目")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("完成") {
+                    dismiss()
                 }
-                .sheet(isPresented: $showAddCategory) {
-                    AddCategorySheet(
-                        transactionType: selectedTransactionType,
-                        mainCategory: $newMainCategory,
-                        subCategory: $newSubCategory,
-                        onSave: {
-                            if !newMainCategory.isEmpty && !newSubCategory.isEmpty {
-                                _ = CategoryService.shared.addOrUpdateCategory(
-                                    transactionType: selectedTransactionType,
-                                    mainCategory: newMainCategory,
-                                    subCategory: newSubCategory,
-                                    context: modelContext
-                                )
-                                try? modelContext.save()
-                                newMainCategory = ""
-                                newSubCategory = ""
-                            }
-                            showAddCategory = false
-                        },
-                        onCancel: {
-                            newMainCategory = ""
-                            newSubCategory = ""
-                            showAddCategory = false
-                        }
-                    )
-                }
-                .sheet(isPresented: $showEditCategory) {
-                    EditCategorySheet(
-                        category: editingCategory,
-                        transactionType: selectedTransactionType,
-                        mainCategory: $newMainCategory,
-                        subCategory: $newSubCategory,
-                        onSave: {
-                            if let category = editingCategory,
-                               !newMainCategory.isEmpty && !newSubCategory.isEmpty {
-                                category.mainCategory = newMainCategory
-                                category.subCategory = newSubCategory
-                                try? modelContext.save()
-                                newMainCategory = ""
-                                newSubCategory = ""
-                                editingCategory = nil
-                            }
-                            showEditCategory = false
-                        },
-                        onCancel: {
-                            newMainCategory = ""
-                            newSubCategory = ""
-                            editingCategory = nil
-                            showEditCategory = false
-                        }
-                    )
-                }
-                .overlay {
-                    if filteredCategories.isEmpty {
-                        ContentUnavailableView(
-                            "暂无\(selectedTransactionType.rawValue)类目",
-                            systemImage: selectedTransactionType == .expense ? "cart" : "banknote",
-                            description: Text("点击右上角 + 按钮添加\(selectedTransactionType.rawValue)类目")
-                        )
-                    }
+            }
+            
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: { showAddCategory = true }) {
+                    Label("添加类目", systemImage: "plus")
                 }
             }
         }
+        .sheet(isPresented: $showAddCategory) {
+            AddCategorySheet(
+                transactionType: selectedTransactionType,
+                mainCategory: $newMainCategory,
+                subCategory: $newSubCategory,
+                onSave: {
+                    if !newMainCategory.isEmpty && !newSubCategory.isEmpty {
+                        _ = CategoryService.shared.addOrUpdateCategory(
+                            transactionType: selectedTransactionType,
+                            mainCategory: newMainCategory,
+                            subCategory: newSubCategory,
+                            context: modelContext
+                        )
+                        try? modelContext.save()
+                        newMainCategory = ""
+                        newSubCategory = ""
+                    }
+                    showAddCategory = false
+                },
+                onCancel: {
+                    newMainCategory = ""
+                    newSubCategory = ""
+                    showAddCategory = false
+                }
+            )
+        }
+        .sheet(isPresented: $showEditCategory) {
+            EditCategorySheet(
+                category: editingCategory,
+                transactionType: selectedTransactionType,
+                mainCategory: $newMainCategory,
+                subCategory: $newSubCategory,
+                onSave: {
+                    if let category = editingCategory,
+                       !newMainCategory.isEmpty && !newSubCategory.isEmpty {
+                        category.mainCategory = newMainCategory
+                        category.subCategory = newSubCategory
+                        try? modelContext.save()
+                        newMainCategory = ""
+                        newSubCategory = ""
+                        editingCategory = nil
+                    }
+                    showEditCategory = false
+                },
+                onCancel: {
+                    newMainCategory = ""
+                    newSubCategory = ""
+                    editingCategory = nil
+                    showEditCategory = false
+                }
+            )
+        }
+        .overlay {
+            if filteredCategories.isEmpty {
+                ContentUnavailableView(
+                    "暂无\(selectedTransactionType.rawValue)类目",
+                    systemImage: selectedTransactionType == .expense ? "cart" : "banknote",
+                    description: Text("点击右上角 + 按钮添加\(selectedTransactionType.rawValue)类目")
+                )
+            }
+        }
+        
+        
         
     }
     private func deleteCategories(at offsets: IndexSet, from categories: [Category]) {
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
         withAnimation {
             for index in offsets {
                 let category = categories[index]
@@ -188,6 +175,117 @@ struct CategoryManagerView: View {
         }
     }
 }
+
+// MARK: - Helper Functions
+
+func categoryColor(for mainCategory: String, transactionType: TransactionType) -> Color {
+    let colorName = CategoryService.getMainCategoryColor(for: mainCategory, transactionType: transactionType)
+    switch colorName {
+    case "pink": return .pink
+    case "orange": return .orange
+    case "green": return .green
+    case "blue": return .blue
+    case "purple": return .purple
+    default: return .gray
+    }
+}
+
+// MARK: - Category Section Header
+
+struct CategorySectionHeader: View {
+    let mainCategory: String
+    let count: Int
+    let transactionType: TransactionType
+    
+    var body: some View {
+        HStack {
+            ZStack {
+                Circle()
+                    .fill(categoryColor(for: mainCategory, transactionType: transactionType).opacity(0.2))
+                    .frame(width: 32, height: 32)
+                Image(systemName: CategoryService.getMainCategoryIcon(for: mainCategory, transactionType: transactionType))
+                    .foregroundStyle(categoryColor(for: mainCategory, transactionType: transactionType))
+            }
+            Text(mainCategory)
+                .fontWeight(.semibold)
+            Spacer()
+            Text("\(count)")
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.2))
+                .foregroundStyle(Color.accentColor)
+                .clipShape(Capsule())
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Category List Item
+
+struct CategoryListItem: View {
+    let category: Category
+    let transactionType: TransactionType
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // 图标
+                ZStack {
+                    Circle()
+                        .fill(categoryColor(for: category.mainCategory, transactionType: transactionType).opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: CategoryService.getSubCategoryIcon(
+                        for: category.mainCategory,
+                        subCategory: category.subCategory,
+                        transactionType: transactionType
+                    ))
+                    .foregroundStyle(categoryColor(for: category.mainCategory, transactionType: transactionType))
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(category.subCategory)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    
+                    if category.usageCount > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chart.bar.fill")
+                                .font(.caption2)
+                            Text("使用 \(category.usageCount) 次")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                // 使用次数徽章
+                if category.usageCount > 0 {
+                    Text("\(category.usageCount)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(categoryColor(for: category.mainCategory, transactionType: transactionType).opacity(0.2))
+                        .foregroundStyle(categoryColor(for: category.mainCategory, transactionType: transactionType))
+                        .clipShape(Capsule())
+                }
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+// MARK: - Add Category Sheet
 
 struct AddCategorySheet: View {
     let transactionType: TransactionType

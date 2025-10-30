@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showCategoryManager = false
     @State private var selectedMonth: Date = Date() // 默认选择当月
+    @State private var dragOffset: CGFloat = 0
     
     // 当月的起止日期
     var currentMonthRange: (start: Date, end: Date) {
@@ -161,36 +162,34 @@ struct ContentView: View {
                     }
                     .padding(.bottom, 12)
                     
-                    // 总览统计（收入、支出、余额）
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("收入")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(String(format: "%.2f", totalIncome))
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.green)
-                        }
+                    // 总览统计（收入、支出、余额）- 优化为网格布局
+                    HStack(spacing: 0) {
+                        StatCard(
+                            title: "收入",
+                            amount: totalIncome,
+                            color: .green,
+                            icon: "arrow.down.circle.fill"
+                        )
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("支出")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(String(format: "%.2f", totalExpense))
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.red)
-                        }
+                        Divider()
+                            .frame(height: 50)
                         
-                        Spacer()
+                        StatCard(
+                            title: "支出",
+                            amount: totalExpense,
+                            color: .red,
+                            icon: "arrow.up.circle.fill"
+                        )
                         
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("余额")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(String(format: "%.2f", balance))
-                                .font(.system(size: 20, weight: .bold, design: .rounded))
-                                .foregroundStyle(balance >= 0 ? .green : .red)
-                        }
+                        Divider()
+                            .frame(height: 50)
+                        
+                        StatCard(
+                            title: "余额",
+                            amount: balance,
+                            color: balance >= 0 ? .green : .red,
+                            icon: balance >= 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+                        )
                     }
                     .padding(.bottom, 8)
                     
@@ -228,47 +227,68 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     
-                    // 分类筛选
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(availableMainCategories, id: \.self) { category in
-                                CategoryChip(
-                                    category: category,
-                                    isSelected: selectedCategory == category,
-                                    transactionType: selectedTransactionType
-                                ) {
-                                    withAnimation {
-                                        if selectedCategory == category {
-                                            selectedCategory = nil
-                                        } else {
-                                            selectedCategory = category
+                    // 分类筛选 - 添加渐变遮罩
+                    if !availableMainCategories.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(availableMainCategories, id: \.self) { category in
+                                    CategoryChip(
+                                        category: category,
+                                        isSelected: selectedCategory == category,
+                                        transactionType: selectedTransactionType
+                                    ) {
+                                        let impact = UIImpactFeedbackGenerator(style: .light)
+                                        impact.impactOccurred()
+                                        withAnimation(.spring(response: 0.3)) {
+                                            if selectedCategory == category {
+                                                selectedCategory = nil
+                                            } else {
+                                                selectedCategory = category
+                                            }
                                         }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 20)
                         }
-                        .padding(.horizontal, 20)
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .black, location: 0.05),
+                                    .init(color: .black, location: 0.95),
+                                    .init(color: .clear, location: 1)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                     }
                 }
                 .padding()
                 .background(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.1), radius: 5, y: 2)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            dragOffset = value.translation.width
+                        }
+                        .onEnded { value in
+                            let threshold: CGFloat = 50
+                            if value.translation.width < -threshold {
+                                // 向左滑动，前往下个月
+                                goToNextMonth()
+                            } else if value.translation.width > threshold {
+                                // 向右滑动，前往上个月
+                                goToPreviousMonth()
+                            }
+                            dragOffset = 0
+                        }
+                )
                 
                 // 账目列表
                 if filteredExpenses.isEmpty {
-                    VStack(spacing: 20) {
-                        Spacer()
-                        Image(systemName: selectedTransactionType == .expense ? "cart" : "banknote")
-                            .font(.system(size: 60))
-                            .foregroundStyle(.secondary)
-                        Text("暂无\(selectedTransactionType.rawValue)记录")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                        Text("点击右上角 + 按钮添加第一条记录")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        Spacer()
-                    }
+                    EmptyStateView(transactionType: selectedTransactionType)
                 } else {
                     List {
                         ForEach(groupedExpenses, id: \.0) { date, expensesForDate in
@@ -341,9 +361,11 @@ struct ContentView: View {
     
     // 前往上个月
     private func goToPreviousMonth() {
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .month, value: -1, to: selectedMonth) {
-            withAnimation {
+            withAnimation(.spring(response: 0.3)) {
                 selectedMonth = newDate
                 selectedCategory = nil // 切换月份时清除分类筛选
             }
@@ -353,13 +375,90 @@ struct ContentView: View {
     // 前往下个月
     private func goToNextMonth() {
         guard canGoToNextMonth else { return }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .month, value: 1, to: selectedMonth) {
-            withAnimation {
+            withAnimation(.spring(response: 0.3)) {
                 selectedMonth = newDate
                 selectedCategory = nil // 切换月份时清除分类筛选
             }
         }
+    }
+}
+
+// MARK: - Stat Card
+
+struct StatCard: View {
+    let title: String
+    let amount: Double
+    let color: Color
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(title)
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+            
+            Text(String(format: "%.2f", amount))
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundStyle(color)
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.3), value: amount)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title)：\(String(format: "%.2f", amount))元")
+    }
+}
+
+// MARK: - Empty State View
+
+struct EmptyStateView: View {
+    let transactionType: TransactionType
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(isAnimating ? 1.1 : 1.0)
+                
+                Image(systemName: transactionType == .expense ? "cart.fill" : "banknote.fill")
+                    .font(.system(size: 50))
+                    .foregroundStyle(Color.accentColor.opacity(0.6))
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    isAnimating = true
+                }
+            }
+            
+            Text("暂无\(transactionType.rawValue)记录")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+            
+            Text("点击右上角 + 按钮添加第一条记录")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("暂无\(transactionType.rawValue)记录，点击右上角加号按钮添加")
     }
 }
 
@@ -418,6 +517,9 @@ struct ExpenseRow: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(expense.mainCategory)，\(expense.subCategory)，\(transactionType == .income ? "收入" : "支出")\(String(format: "%.2f", expense.amount))元")
+        .accessibilityHint("双击查看详情")
     }
     
     var categoryColor: Color {
