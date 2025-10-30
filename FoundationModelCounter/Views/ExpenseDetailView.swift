@@ -13,85 +13,167 @@ struct ExpenseDetailView: View {
     @Environment(\.modelContext) private var modelContext
     
     let expense: Expense
-    @State private var showEditExpense = false
+    
+    // 编辑相关的状态
+    @State private var transactionType: TransactionType
+    @State private var date: Date
+    @State private var amount: String
+    @State private var currency: String
+    @State private var mainCategory: String
+    @State private var subCategory: String
+    @State private var merchant: String
+    @State private var note: String
+    
+    @State private var availableMainCategories: [String] = []
+    @State private var availableSubCategories: [String] = []
+    
+    // UI状态
     @State private var showDeleteAlert = false
     @State private var showFullScreenImage = false
     @State private var showImage = false
     @State private var showOriginalText = false
+    @State private var showDiscardAlert = false
+    @State private var errorMessage: String?
     
-    var transactionType: TransactionType {
-        TransactionType(rawValue: expense.transactionType) ?? .expense
+    let currencies = ["CNY", "USD", "EUR", "JPY", "GBP", "HKD"]
+    let quickAmounts = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+    
+    init(expense: Expense) {
+        self.expense = expense
+        _transactionType = State(initialValue: TransactionType(rawValue: expense.transactionType) ?? .expense)
+        _date = State(initialValue: expense.date)
+        _amount = State(initialValue: String(format: "%.2f", expense.amount))
+        _currency = State(initialValue: expense.currency)
+        _mainCategory = State(initialValue: expense.mainCategory)
+        _subCategory = State(initialValue: expense.subCategory)
+        _merchant = State(initialValue: expense.merchant)
+        _note = State(initialValue: expense.note)
     }
     
-    // 格式化日期为中文
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateStyle = .long
-        formatter.timeStyle = .short
-        return formatter.string(from: expense.date)
+    // 检查是否有更改
+    private var hasChanges: Bool {
+        let originalTransactionType = TransactionType(rawValue: expense.transactionType) ?? .expense
+        let amountValue = Double(amount) ?? 0
+        
+        return transactionType != originalTransactionType ||
+               date != expense.date ||
+               abs(amountValue - expense.amount) > 0.01 ||
+               currency != expense.currency ||
+               mainCategory != expense.mainCategory ||
+               subCategory != expense.subCategory ||
+               merchant != expense.merchant ||
+               note != expense.note
     }
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // 金额卡片 - 美化
-                VStack(spacing: 12) {
+        Form {
+            // 账目信息
+            Section {
+                // 交易类型（只读）
+                HStack {
+                    Image(systemName: transactionType == .expense ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundStyle(transactionType == .expense ? .red : .green)
+                    Text("类型")
+                    Spacer()
+                    Text(transactionType.rawValue)
+                        .foregroundStyle(.secondary)
+                }
+                
+                DatePicker("日期", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Image(systemName: transactionType == .expense ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(transactionType == .expense ? .red : .green)
-                        Text(transactionType.rawValue)
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
+                        Text("金额")
                         Spacer()
+                        TextField("0.00", text: $amount)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 150)
+                        
+                        Picker("", selection: $currency) {
+                            ForEach(currencies, id: \.self) { curr in
+                                Text(curr).tag(curr)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 80)
                     }
                     
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(expense.currency)
-                            .font(.title3)
+                    // 快速金额选择
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(quickAmounts, id: \.self) { quickAmount in
+                                Button(action: {
+                                    amount = String(format: "%.0f", quickAmount)
+                                    let impact = UIImpactFeedbackGenerator(style: .light)
+                                    impact.impactOccurred()
+                                }) {
+                                    Text("¥\(Int(quickAmount))")
+                                        .font(.caption)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Color.accentColor.opacity(0.1))
+                                        .foregroundStyle(Color.accentColor)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 大类选择 - 使用 Menu
+                Menu {
+                    ForEach(availableMainCategories, id: \.self) { category in
+                        Button(category) {
+                            mainCategory = category
+                            updateSubCategories()
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text("大类")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(mainCategory)
                             .foregroundStyle(.secondary)
-                        Text(String(format: "%.2f", expense.amount))
-                            .font(.system(size: 48, weight: .bold, design: .rounded))
-                            .foregroundStyle(transactionType == .expense ? .red : .green)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.secondarySystemBackground))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(transactionType == .expense ? Color.red.opacity(0.3) : Color.green.opacity(0.3), lineWidth: 1)
-                )
-
-                // 详细信息
-                GroupBox {
-                    VStack(spacing: 15) {
-                        InfoRow(label: "日期", value: formattedDate)
-                        Divider()
-                        InfoRow(label: "大类", value: expense.mainCategory)
-                        Divider()
-                        InfoRow(label: "小类", value: expense.subCategory)
-
-                        if !expense.merchant.isEmpty {
-                            Divider()
-                            InfoRow(label: "商户", value: expense.merchant)
-                        }
-
-                        if !expense.note.isEmpty {
-                            Divider()
-                            InfoRow(label: "备注", value: expense.note)
+                
+                // 小类选择 - 使用 Menu
+                Menu {
+                    ForEach(availableSubCategories, id: \.self) { category in
+                        Button(category) {
+                            subCategory = category
                         }
                     }
-                    .padding(.vertical, 5)
+                } label: {
+                    HStack {
+                        Text("小类")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(subCategory)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
-
-                // 账单图片 - 折叠显示
-                if let imageData = expense.imageData,
-                   let image = UIImage(data: imageData) {
+                
+                TextField(transactionType == .expense ? "商户/商品" : "收入来源", text: $merchant)
+                
+                TextField("备注", text: $note, axis: .vertical)
+                    .lineLimit(3...6)
+            } header: {
+                Text("\(transactionType.rawValue)信息")
+            }
+            
+            // 账单图片 - 折叠显示
+            if let imageData = expense.imageData,
+               let image = UIImage(data: imageData) {
+                Section {
                     DisclosureGroup(isExpanded: $showImage) {
                         Image(uiImage: image)
                             .resizable()
@@ -114,10 +196,14 @@ struct ExpenseDetailView: View {
                     .sheet(isPresented: $showFullScreenImage) {
                         FullScreenImageView(image: image)
                     }
+                } header: {
+                    Text("附件")
                 }
-                
-                // 识别的原始文本 - 折叠显示
-                if !expense.originalText.isEmpty {
+            }
+            
+            // 识别的原始文本 - 折叠显示
+            if !expense.originalText.isEmpty {
+                Section {
                     DisclosureGroup(isExpanded: $showOriginalText) {
                         Text(expense.originalText)
                             .font(.system(.body, design: .monospaced))
@@ -133,42 +219,62 @@ struct ExpenseDetailView: View {
                                 .font(.headline)
                         }
                     }
+                } header: {
+                    Text("原始信息")
                 }
-                
-                // 操作按钮
-                HStack(spacing: 12) {
-                    Button(action: { showEditExpense = true }) {
-                        HStack {
-                            Image(systemName: "pencil")
-                            Text("编辑")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    
-                    Button(action: { showDeleteAlert = true }) {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("删除")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-                .padding(.top, 8)
             }
-            .padding()
+            
+            // 错误信息
+            if let error = errorMessage {
+                Section {
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+            
+            // 删除按钮
+            Section {
+                Button(role: .destructive, action: { showDeleteAlert = true }) {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "trash")
+                        Text("删除账目")
+                        Spacer()
+                    }
+                }
+            }
         }
         .navigationTitle("账目详情")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showEditExpense) {
-            EditExpenseView(expense: expense)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(action: saveExpense) {
+                    HStack {
+                        Image(systemName: "checkmark")
+                        Text("保存")
+                    }
+                }
+                .disabled(!hasChanges || amount.isEmpty)
+            }
+        }
+        .navigationBarBackButtonHidden(hasChanges)
+        .toolbar {
+            if hasChanges {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        showDiscardAlert = true
+                    }
+                }
+            }
+        }
+        .alert("放弃更改", isPresented: $showDiscardAlert) {
+            Button("继续编辑", role: .cancel) { }
+            Button("放弃", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("您有未保存的更改，确定要放弃吗？")
         }
         .alert("删除账目", isPresented: $showDeleteAlert) {
             Button("取消", role: .cancel) { }
@@ -178,6 +284,62 @@ struct ExpenseDetailView: View {
         } message: {
             Text("确定要删除这条\(transactionType.rawValue)记录吗？此操作无法撤销。")
         }
+        .onAppear {
+            loadCategories()
+        }
+    }
+    
+    private func loadCategories() {
+        CategoryService.shared.initializeDefaultCategories(context: modelContext)
+        availableMainCategories = CategoryService.shared.getMainCategories(
+            context: modelContext,
+            transactionType: transactionType
+        )
+        updateSubCategories()
+    }
+    
+    private func updateSubCategories() {
+        availableSubCategories = CategoryService.shared.getSubCategories(
+            for: mainCategory,
+            context: modelContext,
+            transactionType: transactionType
+        )
+    }
+    
+    private func saveExpense() {
+        guard let amountValue = Double(amount) else {
+            errorMessage = "请输入有效的金额"
+            return
+        }
+        
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
+        
+        // 更新或添加类目
+        if !mainCategory.isEmpty && !subCategory.isEmpty {
+            _ = CategoryService.shared.addOrUpdateCategory(
+                transactionType: transactionType,
+                mainCategory: mainCategory,
+                subCategory: subCategory,
+                context: modelContext
+            )
+        }
+        
+        // 更新账目信息
+        expense.transactionType = transactionType.rawValue
+        expense.date = date
+        expense.amount = amountValue
+        expense.currency = currency
+        expense.mainCategory = mainCategory
+        expense.subCategory = subCategory
+        expense.merchant = merchant
+        expense.note = note
+        
+        // 保存到数据库
+        try? modelContext.save()
+        
+        // 关闭页面
+        dismiss()
     }
     
     private func deleteExpense() {
@@ -186,35 +348,6 @@ struct ExpenseDetailView: View {
         modelContext.delete(expense)
         try? modelContext.save()
         dismiss()
-    }
-}
-
-struct InfoRow: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: iconForLabel(label))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 24)
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
-        }
-    }
-    
-    private func iconForLabel(_ label: String) -> String {
-        switch label {
-        case "日期": return "calendar"
-        case "大类": return "folder.fill"
-        case "小类": return "tag.fill"
-        case "商户": return "building.2.fill"
-        case "备注": return "note.text"
-        default: return "circle.fill"
-        }
     }
 }
 
