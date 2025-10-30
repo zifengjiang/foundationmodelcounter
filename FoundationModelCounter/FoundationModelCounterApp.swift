@@ -10,6 +10,8 @@ import SwiftData
 
 @main
 struct FoundationModelCounterApp: App {
+    @State private var themeManager = ThemeManager.shared
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Expense.self,
@@ -27,6 +29,7 @@ struct FoundationModelCounterApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(themeManager.colorScheme)
         }
         .modelContainer(sharedModelContainer)
     }

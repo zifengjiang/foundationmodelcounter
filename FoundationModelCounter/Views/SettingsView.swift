@@ -11,13 +11,13 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var config = AIConfiguration.shared
+    @Bindable var themeManager = ThemeManager.shared
     
     @State private var showAPIKeyAlert = false
     @State private var tempAPIKey = ""
     @State private var showAPIKeyConfig = false
     @State private var showExportOptions = false
     @AppStorage("defaultCurrency") private var defaultCurrency = "CNY"
-    @AppStorage("appTheme") private var appTheme = "system"
     
     var body: some View {
         NavigationView {
@@ -110,10 +110,10 @@ struct SettingsView: View {
                     }
                     
                     // 主题设置
-                    Picker("外观主题", selection: $appTheme) {
-                        Text("跟随系统").tag("system")
-                        Text("浅色模式").tag("light")
-                        Text("深色模式").tag("dark")
+                    Picker("外观主题", selection: $themeManager.currentTheme) {
+                        ForEach(AppTheme.allCases, id: \.self) { theme in
+                            Text(theme.displayName).tag(theme)
+                        }
                     }
                 } header: {
                     Text("常规设置")
