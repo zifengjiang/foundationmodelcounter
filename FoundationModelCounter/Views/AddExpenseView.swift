@@ -40,6 +40,12 @@ struct AddExpenseView: View {
     @State private var availableMainCategories: [String] = []
     @State private var availableSubCategories: [String] = []
     
+    // 分期相关状态
+    @State private var enableInstallment = false
+    @State private var installmentPeriods = 3
+    @State private var installmentAnnualRate = ""
+    @State private var showInstallmentPreview = false
+    
     var selectedCategorySubcategories: [String] {
         availableSubCategories.isEmpty ? ["其他"] : availableSubCategories
     }
@@ -197,6 +203,131 @@ struct AddExpenseView: View {
                         .lineLimit(3...6)
                 } header: {
                     Text("\(transactionType.rawValue)信息")
+                }
+                
+                // 分期设置（仅支出类型）
+                if transactionType == .expense {
+                    Section {
+                        Toggle("启用分期", isOn: $enableInstallment)
+                            .onChange(of: enableInstallment) { oldValue, newValue in
+                                if newValue {
+                                    let impact = UIImpactFeedbackGenerator(style: .light)
+                                    impact.impactOccurred()
+                                }
+                            }
+                        
+                        if enableInstallment {
+                            Picker("分期期数", selection: $installmentPeriods) {
+                                ForEach([3, 6, 9, 12, 18, 24], id: \.self) { period in
+                                    Text("\(period)期").tag(period)
+                                }
+                            }
+                            
+                            HStack {
+                                Text("年化利率")
+                                Spacer()
+                                TextField("0.00", text: $installmentAnnualRate)
+                                    .keyboardType(.decimalPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 100)
+                                Text("%")
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            // 分期预览
+                            if let amountValue = Double(amount), amountValue > 0 {
+                                let rate = Double(installmentAnnualRate) ?? 0.0
+                                let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
+                                    principal: amountValue,
+                                    annualRate: rate,
+                                    periods: installmentPeriods
+                                )
+                                let totalInterest = InstallmentCalculator.calculateTotalInterest(
+                                    principal: amountValue,
+                                    annualRate: rate,
+                                    periods: installmentPeriods
+                                )
+                                
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("每期还款")
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(String(format: "%.2f", monthlyPayment))
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                    }
+                                    
+                                    HStack {
+                                        Text("总利息")
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(String(format: "%.2f", totalInterest))
+                                            .foregroundStyle(totalInterest > 0 ? .red : .secondary)
+                                    }
+                                    
+                                    HStack {
+                                        Text("还款总额")
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(String(format: "%.2f", amountValue + totalInterest))
+                                            .font(.headline)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                
+                                Button(action: {
+                                    showInstallmentPreview.toggle()
+                                    let impact = UIImpactFeedbackGenerator(style: .light)
+                                    impact.impactOccurred()
+                                }) {
+                                    HStack {
+                                        Text(showInstallmentPreview ? "收起详情" : "查看详情")
+                                        Spacer()
+                                        Image(systemName: showInstallmentPreview ? "chevron.up" : "chevron.down")
+                                    }
+                                    .foregroundStyle(.blue)
+                                }
+                                
+                                if showInstallmentPreview {
+                                    let details = InstallmentCalculator.calculateInstallmentDetails(
+                                        principal: amountValue,
+                                        annualRate: rate,
+                                        periods: installmentPeriods
+                                    )
+                                    
+                                    ForEach(details.prefix(3), id: \.period) { detail in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("第\(detail.period)期")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            HStack {
+                                                Text("本金: \(String(format: "%.2f", detail.principalPayment))")
+                                                    .font(.caption2)
+                                                Text("利息: \(String(format: "%.2f", detail.interestPayment))")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.red)
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                    
+                                    if details.count > 3 {
+                                        Text("... 共\(installmentPeriods)期")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("分期设置")
+                    } footer: {
+                        if enableInstallment {
+                            Text("分期后将按月自动生成\(installmentPeriods)条账单记录")
+                                .font(.caption)
+                        }
+                    }
                 }
                 
                 // 错误信息
@@ -380,25 +511,82 @@ struct AddExpenseView: View {
             )
         }
         
-        let expense = Expense(
-            transactionType: transactionType.rawValue,
-            date: date,
-            amount: amountValue,
-            currency: currency,
-            mainCategory: mainCategory,
-            subCategory: subCategory,
-            merchant: merchant,
-            note: note,
-            originalText: recognizedText,
-            imageData: selectedImage?.jpegData(compressionQuality: 0.7)
-        )
-        
-        modelContext.insert(expense)
+        // 判断是否为分期账单
+        if enableInstallment && transactionType == .expense && installmentPeriods > 0 {
+            // 创建分期账单
+            createInstallmentExpenses(
+                totalAmount: amountValue,
+                periods: installmentPeriods,
+                annualRate: Double(installmentAnnualRate) ?? 0.0
+            )
+        } else {
+            // 创建普通账单
+            let expense = Expense(
+                transactionType: transactionType.rawValue,
+                date: date,
+                amount: amountValue,
+                currency: currency,
+                mainCategory: mainCategory,
+                subCategory: subCategory,
+                merchant: merchant,
+                note: note,
+                originalText: recognizedText,
+                imageData: selectedImage?.jpegData(compressionQuality: 0.7)
+            )
+            
+            modelContext.insert(expense)
+        }
         
         // 保存数据库
         try? modelContext.save()
         
         dismiss()
+    }
+    
+    /// 创建分期账单
+    private func createInstallmentExpenses(totalAmount: Double, periods: Int, annualRate: Double) {
+        let parentId = UUID()
+        let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
+            principal: totalAmount,
+            annualRate: annualRate,
+            periods: periods
+        )
+        
+        let calendar = Calendar.current
+        
+        for period in 1...periods {
+            // 计算每期的日期（按月递增）
+            let periodDate = calendar.date(byAdding: .month, value: period - 1, to: date) ?? date
+            
+            // 创建每期的账单
+            let installmentNote = note.isEmpty ? "第\(period)/\(periods)期" : "\(note) - 第\(period)/\(periods)期"
+            
+            let expense = Expense(
+                transactionType: transactionType.rawValue,
+                date: periodDate,
+                amount: monthlyPayment,
+                currency: currency,
+                mainCategory: mainCategory,
+                subCategory: subCategory,
+                merchant: merchant,
+                note: installmentNote,
+                originalText: recognizedText,
+                imageData: period == 1 ? selectedImage?.jpegData(compressionQuality: 0.7) : nil,
+                isInstallment: true,
+                parentExpenseId: period == 1 ? nil : parentId,
+                installmentPeriods: periods,
+                installmentAnnualRate: annualRate,
+                installmentNumber: period,
+                totalInstallmentAmount: totalAmount
+            )
+            
+            // 第一期使用 parentId 作为其 id，后续期作为子账单
+            if period == 1 {
+                expense.id = parentId
+            }
+            
+            modelContext.insert(expense)
+        }
     }
     
     // 解析日期字符串（支持多种格式）

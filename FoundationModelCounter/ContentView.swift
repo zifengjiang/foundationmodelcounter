@@ -23,6 +23,10 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     
+    // 分期删除相关状态
+    @State private var expenseToDelete: Expense?
+    @State private var showInstallmentDeleteOptions = false
+    
     // 当月的起止日期
     var currentMonthRange: (start: Date, end: Date) {
         let calendar = Calendar.current
@@ -102,10 +106,30 @@ struct ContentView: View {
         }
     }
     
-    // 判断是否可以前进到下个月
+    // 判断是否为未来月份
+    var isFutureMonth: Bool {
+        let calendar = Calendar.current
+        let today = Date()
+        return selectedMonth > today
+    }
+    
+    // 当前月份有多少分期账单
+    var installmentCount: Int {
+        currentMonthExpenses.filter { $0.isInstallment }.count
+    }
+    
+    // 判断是否可以前进到下个月（允许查看未来月份，用于查看分期账单）
     var canGoToNextMonth: Bool {
         let calendar = Calendar.current
-        return !calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
+        // 允许查看未来12个月（方便查看分期账单）
+        let maxFutureMonth = calendar.date(byAdding: .month, value: 12, to: Date())!
+        return selectedMonth < maxFutureMonth
+    }
+    
+    // 判断是否为当前月份
+    var isCurrentMonth: Bool {
+        let calendar = Calendar.current
+        return calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
     }
     
     var groupedExpenses: [(String, [Expense])] {
@@ -162,9 +186,73 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        Text(monthTitle)
-                            .font(.title3)
-                            .fontWeight(.bold)
+                        // 显示月份，如果不是当月则添加"回到本月"按钮
+                        if isCurrentMonth {
+                            HStack(spacing: 6) {
+                                Text(monthTitle)
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                
+                                // 如果有分期账单，显示标识
+                                if installmentCount > 0 {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "creditcard")
+                                            .font(.system(size: 10))
+                                        Text("\(installmentCount)")
+                                            .font(.system(size: 10, weight: .medium))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.15))
+                                    .foregroundStyle(.blue)
+                                    .clipShape(Capsule())
+                                }
+                            }
+                        } else {
+                            VStack(spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(monthTitle)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                    
+                                    // 未来月份标识
+                                    if isFutureMonth {
+                                        Text("未来")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange.opacity(0.15))
+                                            .foregroundStyle(.orange)
+                                            .clipShape(Capsule())
+                                    }
+                                    
+                                    // 如果有分期账单，显示标识
+                                    if installmentCount > 0 {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "creditcard")
+                                                .font(.system(size: 10))
+                                            Text("\(installmentCount)")
+                                                .font(.system(size: 10, weight: .medium))
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue.opacity(0.15))
+                                        .foregroundStyle(.blue)
+                                        .clipShape(Capsule())
+                                    }
+                                }
+                                
+                                Button(action: goToCurrentMonth) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.uturn.backward")
+                                            .font(.caption2)
+                                        Text("回到本月")
+                                            .font(.caption2)
+                                    }
+                                    .foregroundStyle(.blue)
+                                }
+                            }
+                        }
                         
                         Spacer()
                         
@@ -399,6 +487,32 @@ struct ContentView: View {
             .sheet(isPresented: $showCategoryManager) {
                 CategoryManagerView()
             }
+            .confirmationDialog("删除分期账单", isPresented: $showInstallmentDeleteOptions, titleVisibility: .visible) {
+                if let expense = expenseToDelete {
+                    Button("仅删除当前这一期", role: .destructive) {
+                        deleteCurrentInstallment()
+                    }
+                    
+                    Button("删除全部分期", role: .destructive) {
+                        deleteAllInstallments()
+                    }
+                    
+                    // 只有当前不是最后一期时，才显示提前还清选项
+                    if expense.installmentNumber < expense.installmentPeriods {
+                        Button("提前还清（删除未来期数）", role: .destructive) {
+                            earlyPayoff()
+                        }
+                    }
+                    
+                    Button("取消", role: .cancel) {
+                        expenseToDelete = nil
+                    }
+                }
+            } message: {
+                if let expense = expenseToDelete {
+                    Text("这是第\(expense.installmentNumber)/\(expense.installmentPeriods)期分期账单，请选择删除方式")
+                }
+            }
             .onAppear {
                 // 初始化默认类目
                 CategoryService.shared.initializeDefaultCategories(context: modelContext)
@@ -407,11 +521,99 @@ struct ContentView: View {
     }
 
     private func deleteExpenses(offsets: IndexSet, from expenses: [Expense]) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(expenses[index])
+        // 检查是否包含分期账单
+        let expensesToDelete = offsets.map { expenses[$0] }
+        
+        // 如果只有一个账单且是分期账单，显示选项对话框
+        if expensesToDelete.count == 1, let expense = expensesToDelete.first, expense.isInstallment {
+            expenseToDelete = expense
+            showInstallmentDeleteOptions = true
+        } else {
+            // 直接删除非分期账单
+            withAnimation {
+                for index in offsets {
+                    modelContext.delete(expenses[index])
+                }
             }
         }
+    }
+    
+    // MARK: - 分期删除方法
+    
+    /// 仅删除当前这一期
+    private func deleteCurrentInstallment() {
+        guard let expense = expenseToDelete else { return }
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
+        withAnimation {
+            modelContext.delete(expense)
+            try? modelContext.save()
+        }
+        expenseToDelete = nil
+    }
+    
+    /// 删除全部分期
+    private func deleteAllInstallments() {
+        guard let expense = expenseToDelete else { return }
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
+        
+        // 获取所有相关的分期账单
+        let relatedExpenses = getAllRelatedInstallments(for: expense)
+        
+        withAnimation {
+            // 删除所有相关账单
+            for relatedExpense in relatedExpenses {
+                modelContext.delete(relatedExpense)
+            }
+            try? modelContext.save()
+        }
+        expenseToDelete = nil
+    }
+    
+    /// 提前还清（删除未来期数，将剩余金额合并到当前期）
+    private func earlyPayoff() {
+        guard let expense = expenseToDelete else { return }
+        let impact = UINotificationFeedbackGenerator()
+        impact.notificationOccurred(.success)
+        
+        // 获取所有相关的分期账单
+        let relatedExpenses = getAllRelatedInstallments(for: expense)
+        
+        // 筛选出未来的期数（大于当前期数的）
+        let futureInstallments = relatedExpenses.filter { $0.installmentNumber > expense.installmentNumber }
+        
+        // 计算未来期数的总金额
+        let futureAmount = futureInstallments.reduce(0.0) { $0 + $1.amount }
+        
+        withAnimation {
+            // 将当前期的金额增加未来期数的金额
+            expense.amount += futureAmount
+            expense.note = expense.note.replacingOccurrences(of: "第\(expense.installmentNumber)/\(expense.installmentPeriods)期", with: "已提前还清")
+            
+            // 删除所有未来期数
+            for futureExpense in futureInstallments {
+                modelContext.delete(futureExpense)
+            }
+            try? modelContext.save()
+        }
+        expenseToDelete = nil
+    }
+    
+    /// 获取所有相关的分期账单
+    private func getAllRelatedInstallments(for expense: Expense) -> [Expense] {
+        // 如果是第一期（父账单）
+        if expense.parentExpenseId == nil && expense.installmentNumber == 1 {
+            // 查找所有子账单
+            return self.expenses.filter { $0.parentExpenseId == expense.id || $0.id == expense.id }
+        } else {
+            // 如果是子账单，通过 parentExpenseId 查找所有相关账单
+            if let parentId = expense.parentExpenseId {
+                return self.expenses.filter { $0.parentExpenseId == parentId || $0.id == parentId }
+            }
+        }
+        
+        return [expense]
     }
     
     // 前往上个月
@@ -438,6 +640,16 @@ struct ContentView: View {
                 selectedMonth = newDate
                 selectedCategory = nil // 切换月份时清除分类筛选
             }
+        }
+    }
+    
+    // 回到当前月份
+    private func goToCurrentMonth() {
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        withAnimation(.spring(response: 0.3)) {
+            selectedMonth = Date()
+            selectedCategory = nil // 切换月份时清除分类筛选
         }
     }
 }
@@ -588,8 +800,25 @@ struct ExpenseRow: View {
             
             // 信息
             VStack(alignment: .leading, spacing: 4) {
-                Text(expense.merchant.isEmpty ? expense.subCategory : expense.merchant)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(expense.merchant.isEmpty ? expense.subCategory : expense.merchant)
+                        .font(.headline)
+                    
+                    // 分期标识
+                    if expense.isInstallment {
+                        HStack(spacing: 2) {
+                            Image(systemName: "creditcard")
+                                .font(.system(size: 10))
+                            Text("\(expense.installmentNumber)/\(expense.installmentPeriods)")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.15))
+                        .foregroundStyle(.blue)
+                        .clipShape(Capsule())
+                    }
+                }
                 
                 HStack(spacing: 4) {
                     Text(expense.mainCategory)
