@@ -22,10 +22,18 @@ struct ContentView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var searchText = ""
     @State private var isSearching = false
+    // path - 使用显式的 Expense 数组类型，方便访问当前导航的 expense
+    @State private var navigationPath: [Expense] = []
+    @FocusState private var isKeyboardActive: Bool
     
     // 分期删除相关状态
     @State private var expenseToDelete: Expense?
     @State private var showInstallmentDeleteOptions = false
+    
+    // 获取当前导航堆栈顶部的 expense（即当前详情页显示的 expense）
+    var currentDetailExpense: Expense? {
+        return navigationPath.last
+    }
     
     // 当月的起止日期
     var currentMonthRange: (start: Date, end: Date) {
@@ -170,9 +178,9 @@ struct ContentView: View {
             .map { $0.mainCategory })
         return Array(mainCats).sorted()
     }
-
+    
     var body: some View {
-        NavigationView {
+        NavigationStack(path: $navigationPath) {
             VStack(spacing: 0) {
                 // 统计卡片
                 VStack(spacing: 12) {
@@ -209,7 +217,6 @@ struct ContentView: View {
                                 }
                             }
                         } else {
-                            VStack(spacing: 4) {
                                 HStack(spacing: 6) {
                                     Text(monthTitle)
                                         .font(.title3)
@@ -240,18 +247,17 @@ struct ContentView: View {
                                         .foregroundStyle(.blue)
                                         .clipShape(Capsule())
                                     }
+                                    Button(action: goToCurrentMonth) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.uturn.backward")
+                                                .font(.caption2)
+                                            Text("回到本月")
+                                                .font(.caption2)
+                                        }
+                                        .foregroundStyle(.blue)
+                                    }
                                 }
                                 
-                                Button(action: goToCurrentMonth) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "arrow.uturn.backward")
-                                            .font(.caption2)
-                                        Text("回到本月")
-                                            .font(.caption2)
-                                    }
-                                    .foregroundStyle(.blue)
-                                }
-                            }
                         }
                         
                         Spacer()
@@ -438,7 +444,7 @@ struct ContentView: View {
                         ForEach(groupedExpenses, id: \.0) { date, expensesForDate in
                             Section {
                                 ForEach(expensesForDate) { expense in
-                                    NavigationLink(destination: ExpenseDetailView(expense: expense)) {
+                                    NavigationLink(value: expense) {
                                         ExpenseRow(expense: expense)
                                     }
                                 }
@@ -457,26 +463,8 @@ struct ContentView: View {
                     .listStyle(.insetGrouped)
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Menu {
-                        Button(action: { showSettings = true }) {
-                            Label("AI 设置", systemImage: "gearshape")
-                        }
-                        
-                        Button(action: { showCategoryManager = true }) {
-                            Label("类目管理", systemImage: "folder")
-                        }
-                    } label: {
-                        Label("菜单", systemImage: "line.3.horizontal")
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showAddExpense = true }) {
-                        Label("添加记录", systemImage: "plus.circle.fill")
-                    }
-                }
+            .navigationDestination(for: Expense.self) { expense in
+                ExpenseDetailView(expense: expense)
             }
             .sheet(isPresented: $showAddExpense) {
                 AddExpenseView(defaultTransactionType: selectedTransactionType)
@@ -518,8 +506,106 @@ struct ContentView: View {
                 CategoryService.shared.initializeDefaultCategories(context: modelContext)
             }
         }
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            Text(".")
+                .blendMode(.destinationOut)
+                .frame(height: 70)
+        }
+        .overlay(alignment: .bottom) {
+            CustomBottomBar(
+                path: $navigationPath,
+                searchText: $searchText,
+                isKeyboardActive: $isKeyboardActive
+            ) { isExpanded in
+                
+                Group {
+                    ZStack {
+                        Button(action: { showSettings = true }) {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .contentTransition(.symbolEffect)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
+                        }
+                        .foregroundStyle(.primary)
+                        .blurFade(!isExpanded)
+                        
+                        
+                        Button(action: { showSettings = true }) {
+                            Image(systemName: "square.and.arrow.down.fill")
+                                .font(.title2)
+                                .contentTransition(.symbolEffect)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
+                        }
+                        .foregroundStyle(.primary)
+                        .blurFade(isExpanded)
+                    }
+                    
+                    Button(action: {
+                        let impact = UIImpactFeedbackGenerator(style: .heavy)
+                        impact.impactOccurred()
+                        
+                        // 移除当前详情页的账单
+                        if let expense = currentDetailExpense {
+                            // 如果是分期账单，显示删除选项
+                            if expense.isInstallment {
+                                expenseToDelete = expense
+                                showInstallmentDeleteOptions = true
+                            } else {
+                                // 直接删除非分期账单
+                                withAnimation {
+                                    modelContext.delete(expense)
+                                    try? modelContext.save()
+                                }
+                                // 返回到列表页
+                                navigationPath.removeLast()
+                            }
+                        }
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.title2)
+                            .contentTransition(.symbolEffect)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(.circle)
+                    }
+                    .foregroundStyle(.primary)
+                    .blurFade(isExpanded)
+                    
+                    
+                }
+                .font(.title2)
+            } mainAction: { isExpanded in
+                if (!isExpanded){
+                    Button(action: {
+                        
+                        if isKeyboardActive {
+                            isKeyboardActive = false
+                        } else {
+                            let impact = UIImpactFeedbackGenerator(style: .medium)
+                            impact.impactOccurred()
+                            withAnimation(.spring(response: 0.3)) {
+                                showAddExpense = true
+                            }
+                        }
+                        
+                    }) {
+                        Image(systemName: isKeyboardActive ? "xmark" :"plus")
+                            .font(.title2)
+                            .contentTransition(.symbolEffect)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(.circle)
+                        
+                    }
+                    .foregroundStyle(.primary)
+                    .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
+                }
+                
+            }
+            .padding(.bottom, 8)
+        }
     }
-
+    
     private func deleteExpenses(offsets: IndexSet, from expenses: [Expense]) {
         // 检查是否包含分期账单
         let expensesToDelete = offsets.map { expenses[$0] }
@@ -549,6 +635,10 @@ struct ContentView: View {
             modelContext.delete(expense)
             try? modelContext.save()
         }
+        // 如果在详情页中删除，返回到列表页
+        if navigationPath.last?.id == expense.id {
+            navigationPath.removeLast()
+        }
         expenseToDelete = nil
     }
     
@@ -567,6 +657,10 @@ struct ContentView: View {
                 modelContext.delete(relatedExpense)
             }
             try? modelContext.save()
+        }
+        // 如果在详情页中删除，返回到列表页
+        if navigationPath.last?.id == expense.id {
+            navigationPath.removeLast()
         }
         expenseToDelete = nil
     }
@@ -597,6 +691,7 @@ struct ContentView: View {
             }
             try? modelContext.save()
         }
+        // 提前还清后，当前账单仍然存在，不需要返回列表页
         expenseToDelete = nil
     }
     
