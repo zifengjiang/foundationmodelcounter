@@ -916,9 +916,29 @@ struct ExpenseRow: View {
                 .font(.system(.body, design: .rounded))
                 .fontWeight(.semibold)
                 
-                Text(expense.currency)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                // 如果原始货币与存储货币不同，显示原始货币信息
+                if let originalCurrency = expense.originalCurrency,
+                   let originalAmount = expense.originalAmount,
+                   originalCurrency != expense.currency {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(expense.currency)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 2) {
+                            Text("原")
+                                .font(.system(size: 8))
+                            Text(String(format: "%.2f", originalAmount))
+                                .font(.caption2)
+                            Text(originalCurrency)
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.tertiary)
+                    }
+                } else {
+                    Text(expense.currency)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 4)

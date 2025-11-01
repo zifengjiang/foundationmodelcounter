@@ -119,12 +119,9 @@ struct SettingsView: View {
                 Section {
                     // 默认货币
                     Picker("默认货币", selection: $defaultCurrency) {
-                        Text("人民币 (CNY)").tag("CNY")
-                        Text("美元 (USD)").tag("USD")
-                        Text("欧元 (EUR)").tag("EUR")
-                        Text("日元 (JPY)").tag("JPY")
-                        Text("英镑 (GBP)").tag("GBP")
-                        Text("港币 (HKD)").tag("HKD")
+                        ForEach(CurrencyCode.allCases, id: \.self) { currency in
+                            Text("\(currency.name) (\(currency.rawValue))").tag(currency.rawValue)
+                        }
                     }
                     
                     // 主题设置
@@ -135,6 +132,8 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("常规设置")
+                } footer: {
+                    Text("添加记账时，非默认货币会自动转换为默认货币进行存储")
                 }
                 
                 // 数据管理

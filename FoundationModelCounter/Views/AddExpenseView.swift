@@ -33,9 +33,11 @@ struct AddExpenseView: View {
     @State private var showMainCategoryPicker = false
     @State private var showSubCategoryPicker = false
     
-    let currencies = ["CNY", "USD", "EUR", "JPY", "GBP", "HKD"]
+    let currencies = CurrencyCode.allCases.map { $0.rawValue }
     let categories = ExpenseCategory.allCases
     let quickAmounts = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+    
+    @AppStorage("defaultCurrency") private var defaultCurrency = "CNY"
     
     @State private var availableMainCategories: [String] = []
     @State private var availableSubCategories: [String] = []
@@ -45,6 +47,10 @@ struct AddExpenseView: View {
     @State private var installmentPeriods = 3
     @State private var installmentAnnualRate = ""
     @State private var showInstallmentPreview = false
+    
+    // 货币转换相关状态
+    @State private var isConvertingCurrency = false
+    @State private var conversionRate: Double?
     
     var selectedCategorySubcategories: [String] {
         availableSubCategories.isEmpty ? ["其他"] : availableSubCategories
@@ -124,6 +130,11 @@ struct AddExpenseView: View {
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
                                 .frame(maxWidth: 150)
+                                .onChange(of: amount) { oldValue, newValue in
+                                    if currency != defaultCurrency {
+                                        fetchConversionRate()
+                                    }
+                                }
                             
                             Picker("", selection: $currency) {
                                 ForEach(currencies, id: \.self) { curr in
@@ -132,6 +143,32 @@ struct AddExpenseView: View {
                             }
                             .labelsHidden()
                             .frame(width: 80)
+                            .onChange(of: currency) { oldValue, newValue in
+                                if newValue != defaultCurrency {
+                                    fetchConversionRate()
+                                } else {
+                                    conversionRate = nil
+                                }
+                            }
+                        }
+                        
+                        // 货币转换提示
+                        if currency != defaultCurrency, 
+                           let amountValue = Double(amount), 
+                           amountValue > 0,
+                           let rate = conversionRate {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("≈ \(String(format: "%.2f", amountValue * rate)) \(defaultCurrency)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("(汇率: \(String(format: "%.4f", rate)))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.top, 2)
                         }
                         
                         // 快速金额选择
@@ -419,6 +456,33 @@ struct AddExpenseView: View {
         }
     }
     
+    /// 获取货币转换汇率
+    private func fetchConversionRate() {
+        guard currency != defaultCurrency,
+              let amountValue = Double(amount),
+              amountValue > 0 else {
+            conversionRate = nil
+            return
+        }
+        
+        Task {
+            do {
+                let rate = try await CurrencyExchangeService.shared.getExchangeRate(
+                    from: currency,
+                    to: defaultCurrency
+                )
+                await MainActor.run {
+                    conversionRate = rate
+                }
+            } catch {
+                // 获取汇率失败时静默处理
+                await MainActor.run {
+                    conversionRate = nil
+                }
+            }
+        }
+    }
+    
     private func loadImage(from item: PhotosPickerItem) {
         Task {
             if let data = try? await item.loadTransferable(type: Data.self),
@@ -498,9 +562,6 @@ struct AddExpenseView: View {
             return
         }
         
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        
         // 更新或添加类目
         if !mainCategory.isEmpty && !subCategory.isEmpty {
             _ = CategoryService.shared.addOrUpdateCategory(
@@ -511,43 +572,131 @@ struct AddExpenseView: View {
             )
         }
         
-        // 判断是否为分期账单
-        if enableInstallment && transactionType == .expense && installmentPeriods > 0 {
-            // 创建分期账单
-            createInstallmentExpenses(
-                totalAmount: amountValue,
-                periods: installmentPeriods,
-                annualRate: Double(installmentAnnualRate) ?? 0.0
-            )
+        // 如果选择的货币不是默认货币，需要进行汇率转换
+        if currency != defaultCurrency {
+            isProcessing = true
+            Task {
+                do {
+                    let rate = try await CurrencyExchangeService.shared.getExchangeRate(
+                        from: currency,
+                        to: defaultCurrency
+                    )
+                    let convertedAmount = amountValue * rate
+                    
+                    await MainActor.run {
+                        isProcessing = false
+                        let impact = UINotificationFeedbackGenerator()
+                        impact.notificationOccurred(.success)
+                        
+                        // 判断是否为分期账单
+                        if enableInstallment && transactionType == .expense && installmentPeriods > 0 {
+                            // 创建分期账单（传入转换后的金额）
+                            createInstallmentExpenses(
+                                originalAmount: amountValue,
+                                originalCurrency: currency,
+                                convertedAmount: convertedAmount,
+                                exchangeRate: rate,
+                                periods: installmentPeriods,
+                                annualRate: Double(installmentAnnualRate) ?? 0.0
+                            )
+                        } else {
+                            // 创建普通账单
+                            let expense = Expense(
+                                transactionType: transactionType.rawValue,
+                                date: date,
+                                amount: convertedAmount,
+                                currency: defaultCurrency,
+                                originalAmount: amountValue,
+                                originalCurrency: currency,
+                                exchangeRate: rate,
+                                mainCategory: mainCategory,
+                                subCategory: subCategory,
+                                merchant: merchant,
+                                note: note,
+                                originalText: recognizedText,
+                                imageData: selectedImage?.jpegData(compressionQuality: 0.7)
+                            )
+                            
+                            modelContext.insert(expense)
+                        }
+                        
+                        // 保存数据库
+                        try? modelContext.save()
+                        
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        isProcessing = false
+                        errorMessage = "汇率转换失败：\(error.localizedDescription)"
+                    }
+                }
+            }
         } else {
-            // 创建普通账单
-            let expense = Expense(
-                transactionType: transactionType.rawValue,
-                date: date,
-                amount: amountValue,
-                currency: currency,
-                mainCategory: mainCategory,
-                subCategory: subCategory,
-                merchant: merchant,
-                note: note,
-                originalText: recognizedText,
-                imageData: selectedImage?.jpegData(compressionQuality: 0.7)
-            )
+            // 相同货币，不需要转换
+            let impact = UINotificationFeedbackGenerator()
+            impact.notificationOccurred(.success)
             
-            modelContext.insert(expense)
+            // 判断是否为分期账单
+            if enableInstallment && transactionType == .expense && installmentPeriods > 0 {
+                // 创建分期账单
+                createInstallmentExpenses(
+                    originalAmount: amountValue,
+                    originalCurrency: currency,
+                    convertedAmount: amountValue,
+                    exchangeRate: 1.0,
+                    periods: installmentPeriods,
+                    annualRate: Double(installmentAnnualRate) ?? 0.0
+                )
+            } else {
+                // 创建普通账单
+                let expense = Expense(
+                    transactionType: transactionType.rawValue,
+                    date: date,
+                    amount: amountValue,
+                    currency: defaultCurrency,
+                    originalAmount: amountValue,
+                    originalCurrency: currency,
+                    exchangeRate: 1.0,
+                    mainCategory: mainCategory,
+                    subCategory: subCategory,
+                    merchant: merchant,
+                    note: note,
+                    originalText: recognizedText,
+                    imageData: selectedImage?.jpegData(compressionQuality: 0.7)
+                )
+                
+                modelContext.insert(expense)
+            }
+            
+            // 保存数据库
+            try? modelContext.save()
+            
+            dismiss()
         }
-        
-        // 保存数据库
-        try? modelContext.save()
-        
-        dismiss()
     }
     
     /// 创建分期账单
-    private func createInstallmentExpenses(totalAmount: Double, periods: Int, annualRate: Double) {
+    private func createInstallmentExpenses(
+        originalAmount: Double,
+        originalCurrency: String,
+        convertedAmount: Double,
+        exchangeRate: Double,
+        periods: Int,
+        annualRate: Double
+    ) {
         let parentId = UUID()
+        
+        // 使用转换后的金额计算每期还款
         let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
-            principal: totalAmount,
+            principal: convertedAmount,
+            annualRate: annualRate,
+            periods: periods
+        )
+        
+        // 计算原始货币的每期还款金额（用于显示）
+        let originalMonthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
+            principal: originalAmount,
             annualRate: annualRate,
             periods: periods
         )
@@ -577,7 +726,10 @@ struct AddExpenseView: View {
                 transactionType: transactionType.rawValue,
                 date: periodDate,
                 amount: monthlyPayment,
-                currency: currency,
+                currency: defaultCurrency,
+                originalAmount: originalMonthlyPayment,
+                originalCurrency: originalCurrency,
+                exchangeRate: exchangeRate,
                 mainCategory: mainCategory,
                 subCategory: subCategory,
                 merchant: merchant,
@@ -589,7 +741,7 @@ struct AddExpenseView: View {
                 installmentPeriods: periods,
                 installmentAnnualRate: annualRate,
                 installmentNumber: period,
-                totalInstallmentAmount: totalAmount
+                totalInstallmentAmount: convertedAmount
             )
             
             // 第一期使用 parentId 作为其 id，后续期作为子账单

@@ -116,6 +116,29 @@ struct ExpenseDetailView: View {
                         .disabled(expense.isInstallment)
                     }
                     
+                    // 货币转换信息
+                    if let originalCurrency = expense.originalCurrency,
+                       let originalAmount = expense.originalAmount,
+                       let exchangeRate = expense.exchangeRate,
+                       originalCurrency != expense.currency {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("原始金额: \(String(format: "%.2f", originalAmount)) \(originalCurrency)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack {
+                                Text("汇率: 1 \(originalCurrency) = \(String(format: "%.4f", exchangeRate)) \(expense.currency)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                    
                     // 快速金额选择（分期账单不显示）
                     if !expense.isInstallment {
                         ScrollView(.horizontal, showsIndicators: false) {

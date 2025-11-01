@@ -13,8 +13,11 @@ final class Expense {
     var id: UUID
     var transactionType: String  // 交易类型：支出/收入
     var date: Date
-    var amount: Double
-    var currency: String
+    var amount: Double  // 存储的金额（始终为默认货币）
+    var currency: String  // 默认货币（用于显示和统计）
+    var originalAmount: Double?  // 原始金额（用户输入的金额）
+    var originalCurrency: String?  // 原始货币（用户选择的货币）
+    var exchangeRate: Double?  // 转换时使用的汇率
     var mainCategory: String
     var subCategory: String
     var merchant: String
@@ -36,6 +39,9 @@ final class Expense {
         date: Date = Date(),
         amount: Double,
         currency: String = "CNY",
+        originalAmount: Double? = nil,
+        originalCurrency: String? = nil,
+        exchangeRate: Double = 1.0,
         mainCategory: String,
         subCategory: String,
         merchant: String = "",
@@ -54,6 +60,9 @@ final class Expense {
         self.date = date
         self.amount = amount
         self.currency = currency
+        self.originalAmount = originalAmount ?? amount
+        self.originalCurrency = originalCurrency ?? currency
+        self.exchangeRate = exchangeRate
         self.mainCategory = mainCategory
         self.subCategory = subCategory
         self.merchant = merchant
