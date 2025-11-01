@@ -555,8 +555,20 @@ struct AddExpenseView: View {
         let calendar = Calendar.current
         
         for period in 1...periods {
-            // 计算每期的日期（按月递增）
-            let periodDate = calendar.date(byAdding: .month, value: period - 1, to: date) ?? date
+            // 计算每期的日期
+            let periodDate: Date
+            if period == 1 {
+                // 第一期使用原始日期
+                periodDate = date
+            } else {
+                // 后续期数使用对应月份的第一天
+                if let nextMonth = calendar.date(byAdding: .month, value: period - 1, to: date) {
+                    let components = calendar.dateComponents([.year, .month], from: nextMonth)
+                    periodDate = calendar.date(from: components) ?? nextMonth
+                } else {
+                    periodDate = date
+                }
+            }
             
             // 创建每期的账单
             let installmentNote = note.isEmpty ? "第\(period)/\(periods)期" : "\(note) - 第\(period)/\(periods)期"
