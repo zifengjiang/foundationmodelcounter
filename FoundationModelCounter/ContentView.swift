@@ -326,15 +326,28 @@ struct ContentView: View {
 
                     
                     // 当前类型的金额
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("¥")
-                            .font(.title2)
-                        Text(String(format: "%.2f", totalAmount))
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
-                        Spacer()
-                        Text(selectedTransactionType.rawValue)
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .bottom, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("¥")
+                                .font(.title2)
+                            Text(String(format: "%.2f", totalAmount))
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                // 账单数量统计
+                            HStack(spacing: 8) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.text")
+                                        .font(.caption)
+                                    Text("共 \(filteredExpenses.count) 笔")
+                                        .font(.subheadline)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(selectedTransactionType.rawValue)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+
                     }
                     
                     // 分类筛选 - 添加渐变遮罩
