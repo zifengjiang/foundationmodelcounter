@@ -21,7 +21,6 @@ struct ContentView: View {
     @State private var selectedMonth: Date = Date() // 默认选择当月
     @State private var dragOffset: CGFloat = 0
     @State private var searchText = ""
-    @State private var isSearching = false
     // path - 使用显式的 Expense 数组类型，方便访问当前导航的 expense
     @State private var navigationPath: [Expense] = []
     @FocusState private var isKeyboardActive: Bool
@@ -314,22 +313,9 @@ struct ContentView: View {
                         .onChange(of: selectedTransactionType) { oldValue, newValue in
                             selectedCategory = nil // 切换类型时清除分类筛选
                         }
+
                         
-                        // 搜索按钮
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3)) {
-                                isSearching.toggle()
-                                if !isSearching {
-                                    searchText = ""
-                                }
-                            }
-                        }) {
-                            Image(systemName: isSearching ? "xmark.circle.fill" : "magnifyingglass")
-                                .foregroundStyle(isSearching ? .red : .accentColor)
-                                .font(.title3)
-                        }
-                        
-                        if let category = selectedCategory {
+                        if let _ = selectedCategory {
                             Button(action: { selectedCategory = nil }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.secondary)
@@ -337,29 +323,7 @@ struct ContentView: View {
                         }
                     }
                     .padding(.vertical, 8)
-                    
-                    // 搜索框
-                    if isSearching {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            
-                            TextField("搜索商家、备注或分类", text: $searchText)
-                                .textFieldStyle(.plain)
-                                .autocorrectionDisabled()
-                            
-                            if !searchText.isEmpty {
-                                Button(action: { searchText = "" }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+
                     
                     // 当前类型的金额
                     HStack(alignment: .firstTextBaseline) {
