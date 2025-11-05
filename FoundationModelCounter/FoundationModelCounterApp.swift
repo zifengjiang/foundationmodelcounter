@@ -1,9 +1,9 @@
-//
-//  FoundationModelCounterApp.swift
-//  FoundationModelCounter
-//
-//  Created by didi on 2025/10/28.
-//
+    //
+    //  FoundationModelCounterApp.swift
+    //  FoundationModelCounter
+    //
+    //  Created by didi on 2025/10/28.
+    //
 
 import SwiftUI
 import SwiftData
@@ -11,13 +11,13 @@ import SwiftData
 @main
 struct FoundationModelCounterApp: App {
     @State private var themeManager = ThemeManager.shared
-    
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Expense.self,
             Category.self,
         ])
-        // 启用自动迁移
+            // 启用自动迁移
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
