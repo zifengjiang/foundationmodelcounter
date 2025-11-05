@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Photos
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
@@ -33,6 +34,10 @@ struct ContentView: View {
     @State private var showAddMenu = false
     @State private var showRightMenu = false
     @Namespace private var animation
+    
+    // 快速记账相关状态
+    @State private var isQuickAddingExpense = false
+    @AppStorage("defaultCurrency") private var defaultCurrency = "CNY"
 
         // 获取当前导航堆栈顶部的 expense（即当前详情页显示的 expense）
     var currentDetailExpense: Expense? {
@@ -580,6 +585,30 @@ struct ContentView: View {
                 if (!isExpanded){
                     Group {
                         if showAddMenu {
+                            // 快速记账按钮（从相册获取最新图片）
+                            Button(action: {
+                                if !isQuickAddingExpense {
+                                    quickAddExpense()
+                                }
+                            }) {
+                                Group {
+                                    if isQuickAddingExpense {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .primary))
+                                    } else {
+                                        Image(systemName: "photo.badge.plus")
+                                            .font(.title2)
+                                            .contentTransition(.symbolEffect)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
+                            }
+                            .foregroundStyle(.primary)
+                            .disabled(isQuickAddingExpense)
+                            .accessibilityLabel("快速记账")
+                            
+                            // 普通添加按钮
                             Button(action: {
                                 if isKeyboardActive {
                                     isKeyboardActive = false
@@ -601,6 +630,7 @@ struct ContentView: View {
                             .foregroundStyle(.primary)
                         }
                         
+                        // 菜单切换按钮
                         Button(action: {
                             if isKeyboardActive {
                                 isKeyboardActive = false
@@ -792,6 +822,145 @@ struct ContentView: View {
             selectedMonth = Date()
             selectedCategory = nil // 切换月份时清除分类筛选
         }
+    }
+    
+    // MARK: - 快速记账功能
+    
+    /// 获取相册最新一张照片
+    private func fetchLatestPhoto() async -> UIImage? {
+        return await withCheckedContinuation { continuation in
+            let fetchOptions = PHFetchOptions()
+            fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            fetchOptions.fetchLimit = 1
+            
+            let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+            
+            guard let latestAsset = fetchResult.firstObject else {
+                continuation.resume(returning: nil)
+                return
+            }
+            
+            let requestOptions = PHImageRequestOptions()
+            requestOptions.isSynchronous = true
+            requestOptions.deliveryMode = .highQualityFormat
+            
+            PHImageManager.default().requestImage(
+                for: latestAsset,
+                targetSize: PHImageManagerMaximumSize,
+                contentMode: .aspectFit,
+                options: requestOptions
+            ) { image, _ in
+                continuation.resume(returning: image)
+            }
+        }
+    }
+    
+    /// 快速记账处理
+    private func quickAddExpense() {
+        Task {
+            isQuickAddingExpense = true
+            
+            do {
+                // 步骤 1: 获取最新照片
+                guard let image = await fetchLatestPhoto() else {
+                    await MainActor.run {
+                        isQuickAddingExpense = false
+                        let impact = UINotificationFeedbackGenerator()
+                        impact.notificationOccurred(.error)
+                    }
+                    return
+                }
+                
+                // 步骤 2: OCR 识别文字
+                let recognizedText = try await OCRService.shared.recognizeText(from: image)
+                
+                // 步骤 3: AI 分析账单信息
+                let expenseInfo = try await AIExpenseAnalyzer.shared.analyzeExpense(
+                    from: recognizedText,
+                    context: modelContext,
+                    preferredType: selectedTransactionType
+                )
+                
+                // 步骤 4: 创建并保存账单
+                await MainActor.run {
+                    let transactionType = expenseInfo.transactionType.flatMap { TransactionType(rawValue: $0) } ?? selectedTransactionType
+                    let date = expenseInfo.date.flatMap { parseDate(from: $0) } ?? Date()
+                    let amount = expenseInfo.amount ?? 0.0
+                    let currency = expenseInfo.currency ?? defaultCurrency
+                    let mainCategory = expenseInfo.mainCategory ?? "其他"
+                    let subCategory = expenseInfo.subCategory ?? "其他"
+                    let merchant = expenseInfo.merchant ?? ""
+                    let note = expenseInfo.note ?? ""
+                    
+                    let expense = Expense(
+                        transactionType: transactionType.rawValue,
+                        date: date,
+                        amount: amount,
+                        currency: defaultCurrency,
+                        originalAmount: amount,
+                        originalCurrency: currency,
+                        exchangeRate: 1.0,
+                        mainCategory: mainCategory,
+                        subCategory: subCategory,
+                        merchant: merchant,
+                        note: note,
+                        originalText: recognizedText,
+                        imageData: image.jpegData(compressionQuality: 0.7)
+                    )
+                    
+                    modelContext.insert(expense)
+                    try? modelContext.save()
+                    
+                    isQuickAddingExpense = false
+                    
+                    // 成功反馈
+                    let impact = UINotificationFeedbackGenerator()
+                    impact.notificationOccurred(.success)
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isQuickAddingExpense = false
+                    
+                    // 错误反馈
+                    let impact = UINotificationFeedbackGenerator()
+                    impact.notificationOccurred(.error)
+                    
+                    print("快速记账失败: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// 解析日期字符串（支持多种格式）
+    private func parseDate(from dateString: String) -> Date? {
+        let formatters: [DateFormatter] = {
+            let formats = [
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd",
+                "yyyy/MM/dd HH:mm:ss",
+                "yyyy/MM/dd HH:mm",
+                "yyyy/MM/dd",
+                "MM-dd HH:mm",
+                "MM/dd HH:mm"
+            ]
+            
+            return formats.map { format in
+                let formatter = DateFormatter()
+                formatter.dateFormat = format
+                formatter.locale = Locale(identifier: "zh_CN")
+                return formatter
+            }
+        }()
+        
+        for formatter in formatters {
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+        }
+        
+        return nil
     }
 }
 
