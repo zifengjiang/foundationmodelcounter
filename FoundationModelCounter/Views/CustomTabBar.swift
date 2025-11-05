@@ -196,6 +196,8 @@ struct CustomBottomBar<LeadingContent: View, TrailingContent: View>: View {
             withAnimation(.bouncy) {
                 bounce += 1
             }
+            leftMenuExpanded = false
+            rightMenuExpanded = false
         }
         .onChange(of: rightMenuExpanded) { oldValue, newValue in
             withAnimation(.bouncy) {
