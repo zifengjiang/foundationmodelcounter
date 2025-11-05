@@ -66,19 +66,6 @@ struct CustomAnimatedToolBariOS26: View {
                     }
                     .font(.title2)
                     
-                } mainAction: { _ in
-                    Image(systemName: isKeyboardActive ? "xmark" : "square.and.pencil")
-                        .font(.title2)
-                        .contentTransition(.symbolEffect)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(.circle)
-                        .onTapGesture {
-                            if isKeyboardActive {
-                                isKeyboardActive = false
-                            } else {
-                                print("Write")
-                            }
-                        }
                 } trailingContent: { isExpanded in
                     Group {
                         ZStack {
@@ -107,7 +94,7 @@ struct CustomAnimatedToolBariOS26: View {
 }
 
 @available(iOS 26.0, *)
-struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: View>: View {
+struct CustomBottomBar<LeadingContent: View, TrailingContent: View>: View {
     
     @Binding var path: [Expense]
     @Binding var searchText: String
@@ -115,7 +102,6 @@ struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: 
     @Binding var leftMenuExpanded: Bool
     @Binding var rightMenuExpanded: Bool
     @ViewBuilder var leadingContent: (_ isExpanded: Bool) -> LeadingContent
-    @ViewBuilder var mainAction: (_ isExpanded: Bool) -> MainAction
     @ViewBuilder var trailingContent: (_ isExpanded: Bool) -> TrailingContent
     @State private var bounce: CGFloat = 0
     @State private var rightBounce: CGFloat = 0
@@ -138,9 +124,10 @@ struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: 
                                 ForEach(subviews: leadingContent(isExpanded)) { subview in
                                     subview
                                         .frame(width: 50, height: 50)
+                                        .modifier(ScaleModifier(bounce: bounce))
                                 }
                             }
-                            .modifier(ScaleModifier(bounce: bounce))
+                            
                         }
                         .zIndex(1000)
                         .transition(.blurReplace)
@@ -149,7 +136,7 @@ struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: 
                 
                 GeometryReader {
                     let size = $0.size
-                    let scale = 50 / size.width // 50 is the minimun width
+                    let scale = 0 / size.width // 50 is the minimun width
                     
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
@@ -178,24 +165,21 @@ struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: 
                 //                .padding(.leading, isKeyboardActive.wrappedValue ? -60 : 0)
                 .disabled(isExpanded)
                 
-                mainAction(isExpanded)
-                    .frame(width: 50, height: 50)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                
                 if !isKeyboardActive.wrappedValue {
                     Circle()
                         .foregroundStyle(.clear)
                         .frame(width: 50, height: 50)
-                        .overlay(alignment: .top) {
+                        .overlay(alignment: .bottom) {
                             let layout = rightMenuExpanded ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(ZStackLayout())
                             
                             layout {
-                                ForEach(subviews: trailingContent(rightMenuExpanded)) { subview in
+                                ForEach(subviews: trailingContent(isExpanded)) { subview in
                                     subview
                                         .frame(width: 50, height: 50)
+                                        .modifier(VerticalScaleModifier(bounce: rightBounce))
                                 }
                             }
-                            .modifier(VerticalScaleModifier(bounce: rightBounce))
+                            
                         }
                         .zIndex(1000)
                         .transition(.blurReplace)

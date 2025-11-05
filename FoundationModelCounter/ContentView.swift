@@ -494,7 +494,7 @@ struct ContentView: View {
                 searchText: $searchText,
                 isKeyboardActive: $isKeyboardActive,
                 leftMenuExpanded: $showAddMenu,
-                rightMenuExpanded: $showRightMenu
+                rightMenuExpanded: $showAddMenu
             ) { isExpanded in
 
                 Group {
@@ -576,24 +576,20 @@ struct ContentView: View {
 
                 }
                 .font(.title2)
-            } mainAction: { isExpanded in
+            } trailingContent: { isExpanded in
                 if (!isExpanded){
-                    Group{
+                    Group {
                         if showAddMenu {
-
                             Button(action: {
-
                                 if isKeyboardActive {
                                     isKeyboardActive = false
                                 } else {
                                     let impact = UIImpactFeedbackGenerator(style: .medium)
                                     impact.impactOccurred()
                                     withAnimation(.spring(response: 0.3)) {
-                                            //                                showAddExpense = true
                                         showAddExpense = true
                                     }
                                 }
-
                             }) {
                                 Image(systemName: "plus")
                                     .font(.title2)
@@ -601,32 +597,20 @@ struct ContentView: View {
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .contentShape(.circle)
                                     .matchedTransitionSource(id: "filter", in: animation)
-
                             }
                             .foregroundStyle(.primary)
-                            .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
                         }
                         
                         Button(action: {
-
                             if isKeyboardActive {
                                 isKeyboardActive = false
                             } else {
-                                if showAddMenu {
-                                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                                    impact.impactOccurred()
-                                    withAnimation(.spring(response: 0.3)) {
-                                        showAddMenu = false
-                                    }
-                                }else{
-                                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                                    impact.impactOccurred()
-                                    withAnimation(.spring(response: 0.3)) {
-                                        showAddMenu = true
-                                    }
+                                let impact = UIImpactFeedbackGenerator(style: .medium)
+                                impact.impactOccurred()
+                                withAnimation(.spring(response: 0.3)) {
+                                    showAddMenu.toggle()
                                 }
                             }
-
                         }) {
                             Image(systemName: isKeyboardActive ? "xmark" : showAddMenu ? "xmark": "plus")
                                 .font(.title2)
@@ -634,74 +618,12 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .contentShape(.circle)
                                 .matchedTransitionSource(id: "filter", in: animation)
-
                         }
                         .foregroundStyle(.primary)
                         .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
                     }
+                    .font(.title2)
                 }
-
-            } trailingContent: { isExpanded in
-                Group {
-                    ZStack {
-                        Button(action: {
-                            let impact = UIImpactFeedbackGenerator(style: .medium)
-                            impact.impactOccurred()
-                            withAnimation(.spring(response: 0.3)) {
-                                showRightMenu.toggle()
-                            }
-                        }) {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title2)
-                                .contentTransition(.symbolEffect)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .contentShape(.circle)
-                        }
-                        .foregroundStyle(.primary)
-                        .blurFade(!isExpanded)
-                        
-                        Button(action: {
-                            print("分享功能")
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.title2)
-                                .contentTransition(.symbolEffect)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .contentShape(.circle)
-                        }
-                        .foregroundStyle(.primary)
-                        .blurFade(isExpanded)
-                    }
-                    
-                    Button(action: {
-                        let impact = UIImpactFeedbackGenerator(style: .medium)
-                        impact.impactOccurred()
-                        print("筛选功能")
-                    }) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.title2)
-                            .contentTransition(.symbolEffect)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(.circle)
-                    }
-                    .foregroundStyle(.primary)
-                    .blurFade(isExpanded)
-                    
-                    Button(action: {
-                        let impact = UIImpactFeedbackGenerator(style: .medium)
-                        impact.impactOccurred()
-                        print("统计功能")
-                    }) {
-                        Image(systemName: "chart.bar")
-                            .font(.title2)
-                            .contentTransition(.symbolEffect)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(.circle)
-                    }
-                    .foregroundStyle(.primary)
-                    .blurFade(isExpanded)
-                }
-                .font(.title2)
             }
             .padding(.bottom, 8)
         }
