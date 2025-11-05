@@ -30,6 +30,8 @@ struct ContentView: View {
     @State private var showInstallmentDeleteOptions = false
     @State private var showDeleteConfirmation = false
 
+    @State private var showAddMenu = false
+    @State private var showRightMenu = false
     @Namespace private var animation
 
         // 获取当前导航堆栈顶部的 expense（即当前详情页显示的 expense）
@@ -490,7 +492,9 @@ struct ContentView: View {
             CustomBottomBar(
                 path: $navigationPath,
                 searchText: $searchText,
-                isKeyboardActive: $isKeyboardActive
+                isKeyboardActive: $isKeyboardActive,
+                leftMenuExpanded: $showAddMenu,
+                rightMenuExpanded: $showRightMenu
             ) { isExpanded in
 
                 Group {
@@ -574,31 +578,130 @@ struct ContentView: View {
                 .font(.title2)
             } mainAction: { isExpanded in
                 if (!isExpanded){
-                    Button(action: {
+                    Group{
+                        if showAddMenu {
 
-                        if isKeyboardActive {
-                            isKeyboardActive = false
-                        } else {
+                            Button(action: {
+
+                                if isKeyboardActive {
+                                    isKeyboardActive = false
+                                } else {
+                                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                                    impact.impactOccurred()
+                                    withAnimation(.spring(response: 0.3)) {
+                                            //                                showAddExpense = true
+                                        showAddExpense = true
+                                    }
+                                }
+
+                            }) {
+                                Image(systemName: "plus")
+                                    .font(.title2)
+                                    .contentTransition(.symbolEffect)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .contentShape(.circle)
+                                    .matchedTransitionSource(id: "filter", in: animation)
+
+                            }
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
+                        }
+                        
+                        Button(action: {
+
+                            if isKeyboardActive {
+                                isKeyboardActive = false
+                            } else {
+                                if showAddMenu {
+                                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                                    impact.impactOccurred()
+                                    withAnimation(.spring(response: 0.3)) {
+                                        showAddMenu = false
+                                    }
+                                }else{
+                                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                                    impact.impactOccurred()
+                                    withAnimation(.spring(response: 0.3)) {
+                                        showAddMenu = true
+                                    }
+                                }
+                            }
+
+                        }) {
+                            Image(systemName: isKeyboardActive ? "xmark" : showAddMenu ? "xmark": "plus")
+                                .font(.title2)
+                                .contentTransition(.symbolEffect)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
+                                .matchedTransitionSource(id: "filter", in: animation)
+
+                        }
+                        .foregroundStyle(.primary)
+                        .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
+                    }
+                }
+
+            } trailingContent: { isExpanded in
+                Group {
+                    ZStack {
+                        Button(action: {
                             let impact = UIImpactFeedbackGenerator(style: .medium)
                             impact.impactOccurred()
                             withAnimation(.spring(response: 0.3)) {
-                                showAddExpense = true
+                                showRightMenu.toggle()
                             }
+                        }) {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title2)
+                                .contentTransition(.symbolEffect)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
                         }
-
+                        .foregroundStyle(.primary)
+                        .blurFade(!isExpanded)
+                        
+                        Button(action: {
+                            print("分享功能")
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.title2)
+                                .contentTransition(.symbolEffect)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.circle)
+                        }
+                        .foregroundStyle(.primary)
+                        .blurFade(isExpanded)
+                    }
+                    
+                    Button(action: {
+                        let impact = UIImpactFeedbackGenerator(style: .medium)
+                        impact.impactOccurred()
+                        print("筛选功能")
                     }) {
-                        Image(systemName: isKeyboardActive ? "xmark" :"plus")
+                        Image(systemName: "line.3.horizontal.decrease.circle")
                             .font(.title2)
                             .contentTransition(.symbolEffect)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(.circle)
-                            .matchedTransitionSource(id: "filter", in: animation)
-
                     }
                     .foregroundStyle(.primary)
-                    .accessibilityLabel("添加\(selectedTransactionType.rawValue)记录")
+                    .blurFade(isExpanded)
+                    
+                    Button(action: {
+                        let impact = UIImpactFeedbackGenerator(style: .medium)
+                        impact.impactOccurred()
+                        print("统计功能")
+                    }) {
+                        Image(systemName: "chart.bar")
+                            .font(.title2)
+                            .contentTransition(.symbolEffect)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(.circle)
+                    }
+                    .foregroundStyle(.primary)
+                    .blurFade(isExpanded)
                 }
-
+                .font(.title2)
             }
             .padding(.bottom, 8)
         }

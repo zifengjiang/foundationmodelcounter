@@ -44,7 +44,9 @@ struct CustomAnimatedToolBariOS26: View {
                 CustomBottomBar(
                     path: Binding(projectedValue: .constant([])),
                     searchText: $searchText,
-                    isKeyboardActive: $isKeyboardActive
+                    isKeyboardActive: $isKeyboardActive,
+                    leftMenuExpanded: .constant(false),
+                    rightMenuExpanded: .constant(false)
                 ) { isExpanded in
                     Group {
                         ZStack {
@@ -77,6 +79,24 @@ struct CustomAnimatedToolBariOS26: View {
                                 print("Write")
                             }
                         }
+                } trailingContent: { isExpanded in
+                    Group {
+                        ZStack {
+                            Image(systemName: "ellipsis.circle")
+                                .blurFade(!isExpanded)
+                            
+                            Image(systemName: "star")
+                                .blurFade(isExpanded)
+                        }
+                        
+                        Group {
+                            Image(systemName: "heart")
+                            
+                            Image(systemName: "bookmark")
+                        }
+                        .blurFade(isExpanded)
+                    }
+                    .font(.title2)
                 }
             }
             
@@ -87,14 +107,18 @@ struct CustomAnimatedToolBariOS26: View {
 }
 
 @available(iOS 26.0, *)
-struct CustomBottomBar<LeadingContent: View, MainAction: View>: View {
+struct CustomBottomBar<LeadingContent: View, MainAction: View, TrailingContent: View>: View {
     
     @Binding var path: [Expense]
     @Binding var searchText: String
     var isKeyboardActive: FocusState<Bool>.Binding
+    @Binding var leftMenuExpanded: Bool
+    @Binding var rightMenuExpanded: Bool
     @ViewBuilder var leadingContent: (_ isExpanded: Bool) -> LeadingContent
     @ViewBuilder var mainAction: (_ isExpanded: Bool) -> MainAction
+    @ViewBuilder var trailingContent: (_ isExpanded: Bool) -> TrailingContent
     @State private var bounce: CGFloat = 0
+    @State private var rightBounce: CGFloat = 0
     
     private var isExpanded: Bool {
         !path.isEmpty
@@ -157,15 +181,41 @@ struct CustomBottomBar<LeadingContent: View, MainAction: View>: View {
                 mainAction(isExpanded)
                     .frame(width: 50, height: 50)
                     .glassEffect(.regular.interactive(), in: .circle)
+                
+                if !isKeyboardActive.wrappedValue {
+                    Circle()
+                        .foregroundStyle(.clear)
+                        .frame(width: 50, height: 50)
+                        .overlay(alignment: .top) {
+                            let layout = rightMenuExpanded ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(ZStackLayout())
+                            
+                            layout {
+                                ForEach(subviews: trailingContent(rightMenuExpanded)) { subview in
+                                    subview
+                                        .frame(width: 50, height: 50)
+                                }
+                            }
+                            .modifier(VerticalScaleModifier(bounce: rightBounce))
+                        }
+                        .zIndex(1000)
+                        .transition(.blurReplace)
+                        .blurFade(!isKeyboardActive.wrappedValue)
+                }
             }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, isKeyboardActive.wrappedValue ? 15 : 0)
         .animation(.smooth(duration: 0.3, extraBounce: 0), value: isKeyboardActive.wrappedValue)
         .animation(.bouncy, value: isExpanded)
+        .animation(.bouncy, value: rightMenuExpanded)
         .onChange(of: isExpanded) { oldValue, newValue in
             withAnimation(.bouncy) {
                 bounce += 1
+            }
+        }
+        .onChange(of: rightMenuExpanded) { oldValue, newValue in
+            withAnimation(.bouncy) {
+                rightBounce += 1
             }
         }
     }
@@ -200,6 +250,30 @@ struct ScaleModifier: ViewModifier, Animatable {
             .compositingGroup()
             .blur(radius: loopProgress * 5)
             .offset(x: loopProgress * 15, y: loopProgress * 8)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .scaleEffect(1 + (loopProgress * 0.38), anchor: .center)
+    }
+}
+
+@available(iOS 26.0, *)
+struct VerticalScaleModifier: ViewModifier, Animatable {
+    var bounce: CGFloat
+    var animatableData: CGFloat {
+        get { bounce }
+        set { bounce = newValue }
+    }
+    
+    var loopProgress: CGFloat {
+        let moddedBounce = bounce.truncatingRemainder(dividingBy: 1)
+        let value = moddedBounce > 0.5 ? 1 - moddedBounce : moddedBounce
+        return value * 2
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .compositingGroup()
+            .blur(radius: loopProgress * 5)
+            .offset(x: loopProgress * 8, y: -loopProgress * 15)
             .glassEffect(.regular.interactive(), in: .capsule)
             .scaleEffect(1 + (loopProgress * 0.38), anchor: .center)
     }
