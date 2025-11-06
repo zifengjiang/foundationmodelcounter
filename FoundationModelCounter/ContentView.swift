@@ -38,6 +38,9 @@ struct ContentView: View {
     // 快速记账相关状态
     @State private var isQuickAddingExpense = false
     @AppStorage("defaultCurrency") private var defaultCurrency = "CNY"
+    
+    // ExpenseDetailView 的 ViewModel
+    @State private var detailViewModel: ExpenseDetailViewModel?
 
         // 获取当前导航堆栈顶部的 expense（即当前详情页显示的 expense）
     var currentDetailExpense: Expense? {
@@ -473,7 +476,17 @@ struct ContentView: View {
                 }
             }
             .navigationDestination(for: Expense.self) { expense in
-                ExpenseDetailView(expense: expense)
+                let viewModel = ExpenseDetailViewModel()
+                
+                ExpenseDetailView(expense: expense, viewModel: viewModel)
+                    .onAppear {
+                        viewModel.setup(with: expense)
+                        detailViewModel = viewModel
+                        
+                    }
+                    .onDisappear {
+                        detailViewModel = nil
+                    }
             }
             .sheet(isPresented: $showAddExpense) {
                 AddExpenseView(defaultTransactionType: selectedTransactionType)
@@ -504,6 +517,7 @@ struct ContentView: View {
 
                 Group {
                     ZStack {
+                        // 设置按钮 - 在列表页显示
                         Button(action: { showSettings = true }) {
                             Image(systemName: "gearshape")
                                 .font(.title2)
@@ -514,17 +528,28 @@ struct ContentView: View {
                         }
                         .foregroundStyle(.primary)
                         .blurFade(!isExpanded)
-
-
-                        Button(action: { showSettings = true }) {
-                            Image(systemName: "square.and.arrow.down.fill")
+                        
+                        Button(action: {
+                            
+                            if let viewModel = detailViewModel, let hasChanges = detailViewModel?.hasChanges, hasChanges {
+                                let impact = UIImpactFeedbackGenerator(style: .medium)
+                                impact.impactOccurred()
+                                saveExpenseFromDetail(viewModel: viewModel)
+                            }else{
+                                let impact = UIImpactFeedbackGenerator(style: .medium)
+                                impact.impactOccurred()
+                            }
+                        }) {
+                            Image(systemName: detailViewModel?.hasChanges ?? false ? "checkmark" : "square.and.arrow.down.fill")
                                 .font(.title2)
                                 .contentTransition(.symbolEffect)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .contentShape(.circle)
+                                .transition(.symbolEffect(.drawOn.individually))
                         }
                         .foregroundStyle(.primary)
                         .blurFade(isExpanded)
+//                        .disabled(detailViewModel?.amount.isEmpty ?? true)
                     }
 
                     Button(action: {
@@ -559,7 +584,9 @@ struct ContentView: View {
                                         try? modelContext.save()
                                     }
                                         // 返回到列表页
-//                                    navigationPath.removeLast()
+                                    if navigationPath.last?.id == expense.id {
+                                        navigationPath.removeLast()
+                                    }
                                     expenseToDelete = nil
                                 }
                             }
@@ -821,6 +848,122 @@ struct ContentView: View {
         withAnimation(.spring(response: 0.3)) {
             selectedMonth = Date()
             selectedCategory = nil // 切换月份时清除分类筛选
+        }
+    }
+    
+    // MARK: - 详情页保存功能
+    
+    /// 从详情页保存账目
+    private func saveExpenseFromDetail(viewModel: ExpenseDetailViewModel) {
+        guard let expense = viewModel.expense else { return }
+        guard let amountValue = Double(viewModel.amount) else {
+            viewModel.errorMessage = "请输入有效的金额"
+            return
+        }
+        
+        // 更新或添加类目
+        if !viewModel.mainCategory.isEmpty && !viewModel.subCategory.isEmpty {
+            _ = CategoryService.shared.addOrUpdateCategory(
+                transactionType: viewModel.transactionType,
+                mainCategory: viewModel.mainCategory,
+                subCategory: viewModel.subCategory,
+                context: modelContext
+            )
+        }
+        
+        // 判断是否要将普通账单转换为分期账单
+        if viewModel.enableInstallment && !expense.isInstallment && viewModel.transactionType == .expense && viewModel.installmentPeriods > 0 {
+            // 删除原账单
+            modelContext.delete(expense)
+            
+            // 创建分期账单
+            createInstallmentExpensesFromDetail(
+                viewModel: viewModel,
+                totalAmount: amountValue
+            )
+        } else {
+            // 更新账目信息
+            expense.transactionType = viewModel.transactionType.rawValue
+            expense.date = viewModel.date
+            
+            // 分期账单不允许修改金额
+            if !expense.isInstallment {
+                expense.amount = amountValue
+            }
+            
+            expense.currency = viewModel.currency
+            expense.mainCategory = viewModel.mainCategory
+            expense.subCategory = viewModel.subCategory
+            expense.merchant = viewModel.merchant
+            expense.note = viewModel.note
+        }
+        
+        // 保存到数据库
+        try? modelContext.save()
+        
+//        // 返回列表页
+//        if !navigationPath.isEmpty {
+//            navigationPath.removeLast()
+//        }
+    }
+    
+    /// 从详情页创建分期账单
+    private func createInstallmentExpensesFromDetail(viewModel: ExpenseDetailViewModel, totalAmount: Double) {
+        guard let expense = viewModel.expense else { return }
+        
+        let parentId = UUID()
+        let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
+            principal: totalAmount,
+            annualRate: Double(viewModel.installmentAnnualRate) ?? 0.0,
+            periods: viewModel.installmentPeriods
+        )
+        
+        let calendar = Calendar.current
+        
+        for period in 1...viewModel.installmentPeriods {
+            // 计算每期的日期
+            let periodDate: Date
+            if period == 1 {
+                // 第一期使用原始日期
+                periodDate = viewModel.date
+            } else {
+                // 后续期数使用对应月份的第一天
+                if let nextMonth = calendar.date(byAdding: .month, value: period - 1, to: viewModel.date) {
+                    let components = calendar.dateComponents([.year, .month], from: nextMonth)
+                    periodDate = calendar.date(from: components) ?? nextMonth
+                } else {
+                    periodDate = viewModel.date
+                }
+            }
+            
+            // 创建每期的账单
+            let installmentNote = viewModel.note.isEmpty ? "第\(period)/\(viewModel.installmentPeriods)期" : "\(viewModel.note) - 第\(period)/\(viewModel.installmentPeriods)期"
+            
+            let newExpense = Expense(
+                transactionType: viewModel.transactionType.rawValue,
+                date: periodDate,
+                amount: monthlyPayment,
+                currency: viewModel.currency,
+                mainCategory: viewModel.mainCategory,
+                subCategory: viewModel.subCategory,
+                merchant: viewModel.merchant,
+                note: installmentNote,
+                originalText: expense.originalText,
+                imageData: period == 1 ? expense.imageData : nil,
+                isInstallment: true,
+                parentExpenseId: period == 1 ? nil : parentId,
+                installmentPeriods: viewModel.installmentPeriods,
+                installmentAnnualRate: Double(viewModel.installmentAnnualRate) ?? 0.0,
+                installmentNumber: period,
+                totalInstallmentAmount: totalAmount
+            )
+            
+            // 第一期使用 parentId 作为其 id，后续期作为子账单
+            if period == 1 {
+                newExpense.id = parentId
+            }
+            
+            modelContext.insert(newExpense)
         }
     }
     

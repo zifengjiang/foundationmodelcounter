@@ -12,71 +12,19 @@ struct ExpenseDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     
-    let expense: Expense
-    
-    // 编辑相关的状态
-    @State private var transactionType: TransactionType
-    @State private var date: Date
-    @State private var amount: String
-    @State private var currency: String
-    @State private var mainCategory: String
-    @State private var subCategory: String
-    @State private var merchant: String
-    @State private var note: String
-    
-    @State private var availableMainCategories: [String] = []
-    @State private var availableSubCategories: [String] = []
-    
-    // UI状态
-    @State private var showDeleteAlert = false
-    @State private var showInstallmentDeleteOptions = false
-    @State private var showFullScreenImage = false
-    @State private var showImage = false
-    @State private var showOriginalText = false
-    @State private var showDiscardAlert = false
-    @State private var showInstallmentInfo = false
-    @State private var errorMessage: String?
-    
-    // 分期设置状态
-    @State private var enableInstallment = false
-    @State private var installmentPeriods = 3
-    @State private var installmentAnnualRate = ""
-    @State private var showInstallmentPreview = false
+    @State var viewModel: ExpenseDetailViewModel
     
     let currencies = ["CNY", "USD", "EUR", "JPY", "GBP", "HKD"]
     let quickAmounts = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
     
-    init(expense: Expense) {
-        self.expense = expense
-        _transactionType = State(initialValue: TransactionType(rawValue: expense.transactionType) ?? .expense)
-        _date = State(initialValue: expense.date)
-        _amount = State(initialValue: String(format: "%.2f", expense.amount))
-        _currency = State(initialValue: expense.currency)
-        _mainCategory = State(initialValue: expense.mainCategory)
-        _subCategory = State(initialValue: expense.subCategory)
-        _merchant = State(initialValue: expense.merchant)
-        _note = State(initialValue: expense.note)
-    }
-    
-    // 检查是否有更改
-    private var hasChanges: Bool {
-        let originalTransactionType = TransactionType(rawValue: expense.transactionType) ?? .expense
-        let amountValue = Double(amount) ?? 0
-        
-        // 基本字段的更改检测
-        let basicChanges = transactionType != originalTransactionType ||
-                          date != expense.date ||
-                          abs(amountValue - expense.amount) > 0.01 ||
-                          currency != expense.currency ||
-                          mainCategory != expense.mainCategory ||
-                          subCategory != expense.subCategory ||
-                          merchant != expense.merchant ||
-                          note != expense.note
-        
-        // 分期设置的更改检测（如果启用了分期，视为有更改）
-        let installmentChanges = enableInstallment && !expense.isInstallment
-        
-        return basicChanges || installmentChanges
+    init(expense: Expense, viewModel: ExpenseDetailViewModel? = nil) {
+        if let vm = viewModel {
+            _viewModel = State(initialValue: vm)
+        } else {
+            let vm = ExpenseDetailViewModel()
+            vm.setup(with: expense)
+            _viewModel = State(initialValue: vm)
+        }
     }
     
     var body: some View {
@@ -85,39 +33,40 @@ struct ExpenseDetailView: View {
             Section {
                 // 交易类型（只读）
                 HStack {
-                    Image(systemName: transactionType == .expense ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                        .foregroundStyle(transactionType == .expense ? .red : .green)
+                    Image(systemName: viewModel.transactionType == .expense ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundStyle(viewModel.transactionType == .expense ? .red : .green)
                     Text("类型")
                     Spacer()
-                    Text(transactionType.rawValue)
+                    Text(viewModel.transactionType.rawValue)
                         .foregroundStyle(.secondary)
                 }
                 
-                DatePicker("日期", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                DatePicker("日期", selection: $viewModel.date, displayedComponents: [.date, .hourAndMinute])
                 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("金额")
                         Spacer()
-                        TextField("0.00", text: $amount)
+                        TextField("0.00", text: $viewModel.amount)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 150)
-                            .disabled(expense.isInstallment)
-                            .foregroundStyle(expense.isInstallment ? .secondary : .primary)
+                            .disabled(viewModel.expense?.isInstallment ?? false)
+                            .foregroundStyle((viewModel.expense?.isInstallment ?? false) ? .secondary : .primary)
                         
-                        Picker("", selection: $currency) {
+                        Picker("", selection: $viewModel.currency) {
                             ForEach(currencies, id: \.self) { curr in
                                 Text(curr).tag(curr)
                             }
                         }
                         .labelsHidden()
                         .frame(width: 80)
-                        .disabled(expense.isInstallment)
+                        .disabled(viewModel.expense?.isInstallment ?? false)
                     }
                     
                     // 货币转换信息
-                    if let originalCurrency = expense.originalCurrency,
+                    if let expense = viewModel.expense,
+                       let originalCurrency = expense.originalCurrency,
                        let originalAmount = expense.originalAmount,
                        let exchangeRate = expense.exchangeRate,
                        originalCurrency != expense.currency {
@@ -140,12 +89,12 @@ struct ExpenseDetailView: View {
                     }
                     
                     // 快速金额选择（分期账单不显示）
-                    if !expense.isInstallment {
+                    if !(viewModel.expense?.isInstallment ?? false) {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(quickAmounts, id: \.self) { quickAmount in
                                     Button(action: {
-                                        amount = String(format: "%.0f", quickAmount)
+                                        viewModel.amount = String(format: "%.0f", quickAmount)
                                         let impact = UIImpactFeedbackGenerator(style: .light)
                                         impact.impactOccurred()
                                     }) {
@@ -165,10 +114,10 @@ struct ExpenseDetailView: View {
                 
                 // 大类选择 - 使用 Menu
                 Menu {
-                    ForEach(availableMainCategories, id: \.self) { category in
+                    ForEach(viewModel.availableMainCategories, id: \.self) { category in
                         Button(category) {
-                            mainCategory = category
-                            updateSubCategories()
+                            viewModel.mainCategory = category
+                            viewModel.updateSubCategories(context: modelContext)
                         }
                     }
                 } label: {
@@ -176,7 +125,7 @@ struct ExpenseDetailView: View {
                         Text("大类")
                             .foregroundStyle(.primary)
                         Spacer()
-                        Text(mainCategory)
+                        Text(viewModel.mainCategory)
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption)
@@ -186,9 +135,9 @@ struct ExpenseDetailView: View {
                 
                 // 小类选择 - 使用 Menu
                 Menu {
-                    ForEach(availableSubCategories, id: \.self) { category in
+                    ForEach(viewModel.availableSubCategories, id: \.self) { category in
                         Button(category) {
-                            subCategory = category
+                            viewModel.subCategory = category
                         }
                     }
                 } label: {
@@ -196,7 +145,7 @@ struct ExpenseDetailView: View {
                         Text("小类")
                             .foregroundStyle(.primary)
                         Spacer()
-                        Text(subCategory)
+                        Text(viewModel.subCategory)
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption)
@@ -204,16 +153,16 @@ struct ExpenseDetailView: View {
                     }
                 }
                 
-                TextField(transactionType == .expense ? "商户/商品" : "收入来源", text: $merchant)
+                TextField(viewModel.transactionType == .expense ? "商户/商品" : "收入来源", text: $viewModel.merchant)
                 
-                TextField("备注", text: $note, axis: .vertical)
+                TextField("备注", text: $viewModel.note, axis: .vertical)
                     .lineLimit(3...6)
             } header: {
-                Text("\(transactionType.rawValue)信息")
+                Text("\(viewModel.transactionType.rawValue)信息")
             }
             
             // 分期信息/设置
-            if expense.isInstallment {
+            if let expense = viewModel.expense, expense.isInstallment {
                 // 已经是分期账单，显示信息（只读）
                 Section {
                     HStack {
@@ -227,19 +176,19 @@ struct ExpenseDetailView: View {
                     }
                     
                     Button(action: {
-                        showInstallmentInfo.toggle()
+                        viewModel.showInstallmentInfo.toggle()
                         let impact = UIImpactFeedbackGenerator(style: .light)
                         impact.impactOccurred()
                     }) {
                         HStack {
-                            Text(showInstallmentInfo ? "收起详情" : "查看详情")
+                            Text(viewModel.showInstallmentInfo ? "收起详情" : "查看详情")
                             Spacer()
-                            Image(systemName: showInstallmentInfo ? "chevron.up" : "chevron.down")
+                            Image(systemName: viewModel.showInstallmentInfo ? "chevron.up" : "chevron.down")
                         }
                         .foregroundStyle(.blue)
                     }
                     
-                    if showInstallmentInfo {
+                    if viewModel.showInstallmentInfo {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("原始金额")
@@ -299,19 +248,19 @@ struct ExpenseDetailView: View {
                     Text("分期账单的金额和分期信息不可编辑")
                         .font(.caption)
                 }
-            } else if transactionType == .expense {
+            } else if viewModel.transactionType == .expense {
                 // 非分期账单且为支出类型，显示分期设置
                 Section {
-                    Toggle("启用分期", isOn: $enableInstallment)
-                        .onChange(of: enableInstallment) { oldValue, newValue in
+                    Toggle("启用分期", isOn: $viewModel.enableInstallment)
+                        .onChange(of: viewModel.enableInstallment) { oldValue, newValue in
                             if newValue {
                                 let impact = UIImpactFeedbackGenerator(style: .light)
                                 impact.impactOccurred()
                             }
                         }
                     
-                    if enableInstallment {
-                        Picker("分期期数", selection: $installmentPeriods) {
+                    if viewModel.enableInstallment {
+                        Picker("分期期数", selection: $viewModel.installmentPeriods) {
                             ForEach([3, 6, 9, 12, 18, 24], id: \.self) { period in
                                 Text("\(period)期").tag(period)
                             }
@@ -320,7 +269,7 @@ struct ExpenseDetailView: View {
                         HStack {
                             Text("年化利率")
                             Spacer()
-                            TextField("0.00", text: $installmentAnnualRate)
+                            TextField("0.00", text: $viewModel.installmentAnnualRate)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
                                 .frame(maxWidth: 100)
@@ -329,17 +278,17 @@ struct ExpenseDetailView: View {
                         }
                         
                         // 分期预览
-                        if let amountValue = Double(amount), amountValue > 0 {
-                            let rate = Double(installmentAnnualRate) ?? 0.0
+                        if let amountValue = Double(viewModel.amount), amountValue > 0 {
+                            let rate = Double(viewModel.installmentAnnualRate) ?? 0.0
                             let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
                                 principal: amountValue,
                                 annualRate: rate,
-                                periods: installmentPeriods
+                                periods: viewModel.installmentPeriods
                             )
                             let totalInterest = InstallmentCalculator.calculateTotalInterest(
                                 principal: amountValue,
                                 annualRate: rate,
-                                periods: installmentPeriods
+                                periods: viewModel.installmentPeriods
                             )
                             
                             VStack(alignment: .leading, spacing: 8) {
@@ -371,23 +320,23 @@ struct ExpenseDetailView: View {
                             .padding(.vertical, 4)
                             
                             Button(action: {
-                                showInstallmentPreview.toggle()
+                                viewModel.showInstallmentPreview.toggle()
                                 let impact = UIImpactFeedbackGenerator(style: .light)
                                 impact.impactOccurred()
                             }) {
                                 HStack {
-                                    Text(showInstallmentPreview ? "收起详情" : "查看详情")
+                                    Text(viewModel.showInstallmentPreview ? "收起详情" : "查看详情")
                                     Spacer()
-                                    Image(systemName: showInstallmentPreview ? "chevron.up" : "chevron.down")
+                                    Image(systemName: viewModel.showInstallmentPreview ? "chevron.up" : "chevron.down")
                                 }
                                 .foregroundStyle(.blue)
                             }
                             
-                            if showInstallmentPreview {
+                            if viewModel.showInstallmentPreview {
                                 let details = InstallmentCalculator.calculateInstallmentDetails(
                                     principal: amountValue,
                                     annualRate: rate,
-                                    periods: installmentPeriods
+                                    periods: viewModel.installmentPeriods
                                 )
                                 
                                 ForEach(details.prefix(3), id: \.period) { detail in
@@ -407,7 +356,7 @@ struct ExpenseDetailView: View {
                                 }
                                 
                                 if details.count > 3 {
-                                    Text("... 共\(installmentPeriods)期")
+                                    Text("... 共\(viewModel.installmentPeriods)期")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -417,18 +366,19 @@ struct ExpenseDetailView: View {
                 } header: {
                     Text("分期设置")
                 } footer: {
-                    if enableInstallment {
-                        Text("启用分期后，当前账单将被替换为\(installmentPeriods)条按月分期的账单")
+                    if viewModel.enableInstallment {
+                        Text("启用分期后，当前账单将被替换为\(viewModel.installmentPeriods)条按月分期的账单")
                             .font(.caption)
                     }
                 }
             }
             
             // 账单图片 - 折叠显示
-            if let imageData = expense.imageData,
+            if let expense = viewModel.expense,
+               let imageData = expense.imageData,
                let image = UIImage(data: imageData) {
                 Section {
-                    DisclosureGroup(isExpanded: $showImage) {
+                    DisclosureGroup(isExpanded: $viewModel.showImage) {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFit()
@@ -436,7 +386,7 @@ struct ExpenseDetailView: View {
                             .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
                             .padding(.top, 8)
                             .onTapGesture {
-                                showFullScreenImage = true
+                                viewModel.showFullScreenImage = true
                             }
                             .accessibilityHint("双击查看大图")
                     } label: {
@@ -447,7 +397,7 @@ struct ExpenseDetailView: View {
                                 .font(.headline)
                         }
                     }
-                    .sheet(isPresented: $showFullScreenImage) {
+                    .sheet(isPresented: $viewModel.showFullScreenImage) {
                         FullScreenImageView(image: image)
                     }
                 } header: {
@@ -456,9 +406,9 @@ struct ExpenseDetailView: View {
             }
             
             // 识别的原始文本 - 折叠显示
-            if !expense.originalText.isEmpty {
+            if let expense = viewModel.expense, !expense.originalText.isEmpty {
                 Section {
-                    DisclosureGroup(isExpanded: $showOriginalText) {
+                    DisclosureGroup(isExpanded: $viewModel.showOriginalText) {
                         Text(expense.originalText)
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -479,7 +429,7 @@ struct ExpenseDetailView: View {
             }
             
             // 错误信息
-            if let error = errorMessage {
+            if let error = viewModel.errorMessage {
                 Section {
                     Text(error)
                         .foregroundStyle(.red)
@@ -487,49 +437,20 @@ struct ExpenseDetailView: View {
                 }
             }
             
-            // 删除按钮
-            Section {
-                Button(role: .destructive, action: {
-                    // 如果是分期账单，显示分期删除选项
-                    if expense.isInstallment {
-                        showInstallmentDeleteOptions = true
-                    } else {
-                        showDeleteAlert = true
-                    }
-                }) {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "trash")
-                        Text("删除账目")
-                        Spacer()
-                    }
-                }
-            }
         }
         .navigationTitle("账目详情")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(viewModel.hasChanges)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button(action: saveExpense) {
-                    HStack {
-                        Image(systemName: "checkmark")
-                        Text("保存")
-                    }
-                }
-                .disabled(!hasChanges || amount.isEmpty)
-            }
-        }
-        .navigationBarBackButtonHidden(hasChanges)
-        .toolbar {
-            if hasChanges {
+            if viewModel.hasChanges {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") {
-                        showDiscardAlert = true
+                        viewModel.showDiscardAlert = true
                     }
                 }
             }
         }
-        .alert("放弃更改", isPresented: $showDiscardAlert) {
+        .alert("放弃更改", isPresented: $viewModel.showDiscardAlert) {
             Button("继续编辑", role: .cancel) { }
             Button("放弃", role: .destructive) {
                 dismiss()
@@ -537,248 +458,41 @@ struct ExpenseDetailView: View {
         } message: {
             Text("您有未保存的更改，确定要放弃吗？")
         }
-        .alert("删除账目", isPresented: $showDeleteAlert) {
+        .alert("删除账目", isPresented: $viewModel.showDeleteAlert) {
             Button("取消", role: .cancel) { }
             Button("删除", role: .destructive) {
-                deleteExpense()
+                viewModel.deleteExpense(context: modelContext, dismiss: dismiss)
             }
         } message: {
-            Text("确定要删除这条\(transactionType.rawValue)记录吗？此操作无法撤销。")
+            if let expense = viewModel.expense {
+                Text("确定要删除这条\(TransactionType(rawValue: expense.transactionType)?.rawValue ?? "")记录吗？此操作无法撤销。")
+            }
         }
-        .confirmationDialog("删除分期账单", isPresented: $showInstallmentDeleteOptions, titleVisibility: .visible) {
+        .confirmationDialog("删除分期账单", isPresented: $viewModel.showInstallmentDeleteOptions, titleVisibility: .visible) {
             Button("仅删除当前这一期", role: .destructive) {
-                deleteCurrentInstallment()
+                viewModel.deleteCurrentInstallment(context: modelContext, dismiss: dismiss)
             }
             
             Button("删除全部分期", role: .destructive) {
-                deleteAllInstallments()
+                viewModel.deleteAllInstallments(context: modelContext, dismiss: dismiss)
             }
             
             // 只有当前不是最后一期时，才显示提前还清选项
-            if expense.installmentNumber < expense.installmentPeriods {
+            if let expense = viewModel.expense, expense.installmentNumber < expense.installmentPeriods {
                 Button("提前还清（删除未来期数）", role: .destructive) {
-                    earlyPayoff()
+                    viewModel.earlyPayoff(context: modelContext, dismiss: dismiss)
                 }
             }
             
             Button("取消", role: .cancel) { }
         } message: {
-            Text("这是第\(expense.installmentNumber)/\(expense.installmentPeriods)期分期账单，请选择删除方式")
+            if let expense = viewModel.expense {
+                Text("这是第\(expense.installmentNumber)/\(expense.installmentPeriods)期分期账单，请选择删除方式")
+            }
         }
         .onAppear {
-            loadCategories()
+            viewModel.loadCategories(context: modelContext)
         }
-    }
-    
-    private func loadCategories() {
-        CategoryService.shared.initializeDefaultCategories(context: modelContext)
-        availableMainCategories = CategoryService.shared.getMainCategories(
-            context: modelContext,
-            transactionType: transactionType
-        )
-        updateSubCategories()
-    }
-    
-    private func updateSubCategories() {
-        availableSubCategories = CategoryService.shared.getSubCategories(
-            for: mainCategory,
-            context: modelContext,
-            transactionType: transactionType
-        )
-    }
-    
-    private func saveExpense() {
-        guard let amountValue = Double(amount) else {
-            errorMessage = "请输入有效的金额"
-            return
-        }
-        
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        
-        // 更新或添加类目
-        if !mainCategory.isEmpty && !subCategory.isEmpty {
-            _ = CategoryService.shared.addOrUpdateCategory(
-                transactionType: transactionType,
-                mainCategory: mainCategory,
-                subCategory: subCategory,
-                context: modelContext
-            )
-        }
-        
-        // 判断是否要将普通账单转换为分期账单
-        if enableInstallment && !expense.isInstallment && transactionType == .expense && installmentPeriods > 0 {
-            // 删除原账单
-            modelContext.delete(expense)
-            
-            // 创建分期账单
-            createInstallmentExpenses(
-                totalAmount: amountValue,
-                periods: installmentPeriods,
-                annualRate: Double(installmentAnnualRate) ?? 0.0
-            )
-        } else {
-            // 更新账目信息
-            expense.transactionType = transactionType.rawValue
-            expense.date = date
-            
-            // 分期账单不允许修改金额
-            if !expense.isInstallment {
-                expense.amount = amountValue
-            }
-            
-            expense.currency = currency
-            expense.mainCategory = mainCategory
-            expense.subCategory = subCategory
-            expense.merchant = merchant
-            expense.note = note
-        }
-        
-        // 保存到数据库
-        try? modelContext.save()
-        
-        // 关闭页面
-        dismiss()
-    }
-    
-    /// 创建分期账单
-    private func createInstallmentExpenses(totalAmount: Double, periods: Int, annualRate: Double) {
-        let parentId = UUID()
-        let monthlyPayment = InstallmentCalculator.calculateMonthlyPayment(
-            principal: totalAmount,
-            annualRate: annualRate,
-            periods: periods
-        )
-        
-        let calendar = Calendar.current
-        
-        for period in 1...periods {
-            // 计算每期的日期
-            let periodDate: Date
-            if period == 1 {
-                // 第一期使用原始日期
-                periodDate = date
-            } else {
-                // 后续期数使用对应月份的第一天
-                if let nextMonth = calendar.date(byAdding: .month, value: period - 1, to: date) {
-                    let components = calendar.dateComponents([.year, .month], from: nextMonth)
-                    periodDate = calendar.date(from: components) ?? nextMonth
-                } else {
-                    periodDate = date
-                }
-            }
-            
-            // 创建每期的账单
-            let installmentNote = note.isEmpty ? "第\(period)/\(periods)期" : "\(note) - 第\(period)/\(periods)期"
-            
-            let newExpense = Expense(
-                transactionType: transactionType.rawValue,
-                date: periodDate,
-                amount: monthlyPayment,
-                currency: currency,
-                mainCategory: mainCategory,
-                subCategory: subCategory,
-                merchant: merchant,
-                note: installmentNote,
-                originalText: expense.originalText,
-                imageData: period == 1 ? expense.imageData : nil,
-                isInstallment: true,
-                parentExpenseId: period == 1 ? nil : parentId,
-                installmentPeriods: periods,
-                installmentAnnualRate: annualRate,
-                installmentNumber: period,
-                totalInstallmentAmount: totalAmount
-            )
-            
-            // 第一期使用 parentId 作为其 id，后续期作为子账单
-            if period == 1 {
-                newExpense.id = parentId
-            }
-            
-            modelContext.insert(newExpense)
-        }
-    }
-    
-    private func deleteExpense() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        modelContext.delete(expense)
-        try? modelContext.save()
-        dismiss()
-    }
-    
-    // MARK: - 分期删除方法
-    
-    /// 仅删除当前这一期
-    private func deleteCurrentInstallment() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        modelContext.delete(expense)
-        try? modelContext.save()
-        dismiss()
-    }
-    
-    /// 删除全部分期
-    private func deleteAllInstallments() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        
-        // 获取所有相关的分期账单
-        let relatedExpenses = getAllRelatedInstallments()
-        
-        // 删除所有相关账单
-        for relatedExpense in relatedExpenses {
-            modelContext.delete(relatedExpense)
-        }
-        
-        try? modelContext.save()
-        dismiss()
-    }
-    
-    /// 提前还清（删除未来期数，将剩余金额合并到当前期）
-    private func earlyPayoff() {
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        
-        // 获取所有相关的分期账单
-        let relatedExpenses = getAllRelatedInstallments()
-        
-        // 筛选出未来的期数（大于当前期数的）
-        let futureInstallments = relatedExpenses.filter { $0.installmentNumber > expense.installmentNumber }
-        
-        // 计算未来期数的总金额
-        let futureAmount = futureInstallments.reduce(0.0) { $0 + $1.amount }
-        
-        // 将当前期的金额增加未来期数的金额
-        expense.amount += futureAmount
-        expense.note = expense.note.replacingOccurrences(of: "第\(expense.installmentNumber)/\(expense.installmentPeriods)期", with: "已提前还清")
-        
-        // 删除所有未来期数
-        for futureExpense in futureInstallments {
-            modelContext.delete(futureExpense)
-        }
-        
-        try? modelContext.save()
-        dismiss()
-    }
-    
-    /// 获取所有相关的分期账单
-    private func getAllRelatedInstallments() -> [Expense] {
-        let descriptor = FetchDescriptor<Expense>()
-        let allExpenses = (try? modelContext.fetch(descriptor)) ?? []
-        
-        // 如果是第一期（父账单）
-        if expense.parentExpenseId == nil && expense.installmentNumber == 1 {
-            // 查找所有子账单
-            return allExpenses.filter { $0.parentExpenseId == expense.id || $0.id == expense.id }
-        } else {
-            // 如果是子账单，通过 parentExpenseId 查找所有相关账单
-            if let parentId = expense.parentExpenseId {
-                return allExpenses.filter { $0.parentExpenseId == parentId || $0.id == parentId }
-            }
-        }
-        
-        return [expense]
     }
 }
 
